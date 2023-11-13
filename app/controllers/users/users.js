@@ -4,6 +4,12 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const sendEmail = require("../../lib/sendEmail");
 const sendOtp = require("../../util/sendOtp");
+const ejs = require("ejs");
+const path = require("path");
+const {
+  getPaginatedResults,
+  sendSuccessResponse,
+} = require("../../util/genericDBFunc");
 
 exports.create = async (req, res) => {
   const {
@@ -61,12 +67,46 @@ exports.create = async (req, res) => {
           "Sign Up Verification",
           `Thanks for signing up. Your code to verify is: ${otp}`
         );
-        if (!emailSent.success) {
-          return res.status(500).json({
-            status: false,
-            message: emailSent.message,
-          });
-        }
+        // Render the EJS template to a string
+        const emailTemplatePath = path.join(
+          __dirname,
+          "..",
+          "..",
+          "views",
+          "emailVerification.ejs"
+        );
+        const dataForEjs = {
+          verificationCode: otp,
+          date: new Date().toLocaleDateString("en-US"), 
+        };
+
+        ejs.renderFile(
+          emailTemplatePath,
+          dataForEjs,
+          async (err, htmlContent) => {
+            if (err) {
+              console.log(err); // Handle error appropriately
+              return res.status(500).json({
+                status: false,
+                message: "Error rendering email template",
+              });
+            } else {
+              // Use the rendered HTML content for the email
+              const emailSent = await sendEmail(
+                email,
+                "Sign Up Verification",
+                htmlContent
+              );
+
+              if (!emailSent.success) {
+                return res.status(500).json({
+                  status: false,
+                  message: emailSent.message,
+                });
+              }
+            }
+          }
+        );
         break;
       case "google":
         if (!google_access_token) {
@@ -119,10 +159,14 @@ exports.create = async (req, res) => {
 
       response.result.user.email = email;
       response.result.token = token;
-      // response.note = "We have sent you verification code";
     }
 
-    return res.status(201).json(response);
+    return sendSuccessResponse(
+      res,
+      "Users retrieved successfully",
+      { response },
+      201
+    );
   } catch (error) {
     console.error(error);
     return res.status(500).json({
@@ -136,7 +180,7 @@ exports.create = async (req, res) => {
 exports.verify_otp = async (req, res) => {
   const { email, otp } = req.body;
 
-  if ((!email || !otp)) {
+  if (!email || !otp) {
     return res
       .status(400)
       .json({ status: false, message: "email and otp are required" });
@@ -167,9 +211,7 @@ exports.verify_otp = async (req, res) => {
     const update_otp_query =
       "UPDATE users SET otp = $1, verify_email = $2 WHERE email = $3";
     await pool.query(update_otp_query, [nullOtp, verifiedEmail, email]);
-    return res
-      .status(200)
-      .json({ status: true, message: "Otp verified successfully" });
+    return sendSuccessResponse(res, "Otp verified successfully");
   } catch (error) {
     console.error(error);
     return res.status(500).json({
@@ -203,7 +245,7 @@ exports.forgotPassword = async (req, res) => {
       status: true,
       message: "We've send the verification code on " + email,
     });
-  } catch (err) {
+  } catch (err) { 
     console.log(err);
     return res.status(500).json({
       message: "Error Occurred",
@@ -238,7 +280,7 @@ exports.resetPassword = async (req, res) => {
     res.json({
       status: true,
       message: "Password reset successfully!",
-      result: result.rows[0]
+      result: result.rows[0],
     });
   } catch (err) {
     res.status(500).json({
@@ -331,7 +373,7 @@ exports.signIn = async (req, res) => {
         expiresIn: "30d",
       }
     );
-    
+
     delete checkUserExists.rows[0].password;
     delete checkUserExists.rows[0].otp;
 
@@ -382,18 +424,12 @@ exports.getUser = async (req, res) => {
 };
 
 exports.getAllUsers = async (req, res) => {
-  const page = parseInt(req.query.page, 10) || 1;
-  const limit = parseInt(req.query.limit, 10) || 10;
-  const offset = (page - 1) * limit;
-
   try {
-    const countResult = await pool.query("SELECT COUNT(*) FROM users");
-    const total = parseInt(countResult.rows[0].count, 10);
+    const { page, limit, offset, total, totalPages } =
+      await getPaginatedResults(req, "users");
 
     if (total === 0) {
-      return res.status(200).json({
-        status: true,
-        message: "No users found",
+      return sendSuccessResponse(res, "No users found", {
         users: [],
         currentPage: page,
         totalPages: 0,
@@ -406,20 +442,15 @@ exports.getAllUsers = async (req, res) => {
       [limit, offset]
     );
 
-    const totalPages = Math.ceil(total / limit);
+    const users = userQuery.rows.map(
+      ({ password, otp, ...userWithoutPassword }) => userWithoutPassword
+    );
 
-    const users = userQuery.rows.map((user) => {
-      const { password, otp, ...userWithoutPassword } = user;
-      return userWithoutPassword;
-    });
-
-    return res.status(200).json({
-      status: true,
-      message: "Users retrieved successfully",
+    sendSuccessResponse(res, "Users retrieved successfully", {
       currentPage: page,
-      totalPages: totalPages,
+      totalPages,
       totalUsers: total,
-      users: users,
+      users,
     });
   } catch (error) {
     console.error(error);
@@ -472,7 +503,7 @@ exports.getRecentlyDeletedUsers = async (req, res) => {
 };
 
 exports.deleteUser = async (req, res) => {
-  const userId = parseInt(req.params.id, 10); 
+  const userId = parseInt(req.params.id, 10);
 
   if (!userId) {
     return res.status(400).json({
@@ -510,7 +541,3 @@ exports.deleteUser = async (req, res) => {
     });
   }
 };
-
-
-
-

@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+    /* Add your CSS styling here */
+    body {
+        font-family: Arial, sans-serif;
+        background-color: #000;
+        color: #333;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        flex-direction: column;
+    }
+    .container {
+        background-color: #fff;
+        padding: 20px;
+        margin: 10px auto;
+        width: 80%;
+        max-width: 600px;
+        border: 1px solid #dedede;
+        border-radius: 25px;
+    }
+    .verification-code {
+        font-size: 2em;
+        margin: 20px 0;
+        background-color: #000;
+        color: #fff;
+        padding: 10px;
+        border-radius: 10px;
+        letter-spacing: 10px;
+    }
+    .verification-parent {
+        text-align: center;
+
+    }
+    .white{
+        color: #fff;
+    }
+    .flex {
+        display: flex;
+    } .justify-between {
+        justify-content: space-between;
+    } .items-center {
+        align-items: center;
+    }
+    .justify-center{
+        justify-content: center;
+    }
+    .col {
+        flex-direction: column;
+    }
+</style>
+</head>
+<body>
+    <div class="main-container">
+        <div class="flex justify-between items-center">
+            <img src="../../public/images/logo.png" alt="">
+            <p><strong>Date:</strong> <%= date %></p>
+        </div>
+        <div class="container">
+
+            <h2>Email Verification</h2>
+            <p>Thank you for choosing Ride Share as your trusted platform. To ensure the security of your account and to complete the registration process, we need to verify your email address. Please find your unique verification code below:</p>
+            <div class="verification-parent">
+            <span class="verification-code">
+                <%= verificationCode %>
+            </div>
+            </span>
+        
+        <p>Please enter this code on the verification page to activate your account. If you didn't request this code, please ignore this email, and your account will remain inactive.</p>
+        
+        <p>We look forward to serving you.</p>
+    </div>
+    <footer class="flex justify-center items-center col">
+            <img src="../../public/images/logo.png" alt="">
+            <div>
+                <p>&copy 2023 Ride Share. All right reserved</p>
+            </div>
+            <!-- display icons -->
+    </footer>
+    </div>
+</body>
+</html>
