@@ -31,7 +31,9 @@ exports.getPaginatedResults = async (req, tableName) => {
   const limit = parseInt(req.query.limit, 10) || 10;
   const offset = (page - 1) * limit;
 
-  const countResult = await pool.query(`SELECT COUNT(*) FROM ${tableName}`);
+  const countResult = await pool.query(
+    `SELECT COUNT(*) FROM ${tableName} WHERE deleted_at IS NULL`
+  );
   const total = parseInt(countResult.rows[0].count, 10);
   const totalPages = Math.ceil(total / limit);
 
