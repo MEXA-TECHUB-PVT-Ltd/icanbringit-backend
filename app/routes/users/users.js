@@ -8,31 +8,18 @@ router.post("/verify_otp", controller.verify_otp);
 router.post("/forgotPassword", controller.forgotPassword);
 router.put("/resetPassword", controller.resetPassword);
 router.put("/updatePassword", controller.updatePassword);
+router.put("/updateProfile", controller.updateProfile);
+router.put("/updateBlockStatus", controller.updateBlockStatus);
 router.post("/signIn", controller.signIn);
 router.get("/get/:id", controller.getUser);
+router.get("/search/:name", controller.search);
+router.get("/getUsersByCountry/:country", controller.getUsersByCountry);
+router.get("/addByYear", controller.addByYear);
 router.get("/getAll", controller.getAllUsers);
 router.get("/getRecentlyDeletedUsers", controller.getRecentlyDeletedUsers);
 router.delete("/delete/:id", controller.deleteUser);
 
-// ! user bio
-router.post("/addBio", controller.addBio);
-router.put("/updateBio", controller.updateBio);
-router.get("/getUserBio/:id", controller.getUserBio);
-// ! event type
-router.post("/addEventType", controller.addEventType);
-router.put("/updateEventType", controller.updateEventType);
-router.get("/getEventType/:id", controller.getEventType);
-router.get("/getAllEventTypes", controller.getAllEventTypes);
-router.delete("/deleteEventType/:id", controller.deleteEventType);
-router.delete("/deleteAllEventTypes", controller.deleteAllEventTypes);
 
-// ! food preference
-router.post("/addFoodPref", controller.addFoodPref);
-router.put("/updateFoodPref", controller.updateFoodPref);
-router.get("/getFoodPref/:id", controller.getFoodPref);
-router.get("/getAllFoodPref", controller.getAllFoodPref);
-router.delete("/deleteFoodPref/:id", controller.deleteFoodPref);
-router.delete("/deleteAllFoodPref", controller.deleteAllFoodPref);
 
 module.exports = router;
 
