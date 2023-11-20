@@ -15,9 +15,9 @@ exports.upload = async (req, res) => {
     );
 
     res.status(200).json({
-      status: "success",
-      data: result.rows[0],
+      status: true,
       message: "File uploaded successfully.",
+      data: result.rows[0],
     });
   } catch (error) {
     console.error(error);
