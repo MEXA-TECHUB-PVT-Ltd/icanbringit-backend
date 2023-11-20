@@ -22,7 +22,8 @@ CREATE TABLE IF NOT EXISTS users(
   location JSONB,
   block_status BOOLEAN DEFAULT FALSE,
   payment_status BOOLEAN DEFAULT FALSE,
-  total_events INT,
+  total_events INT DEFAULT 0,
+  total_attendee INT DEFAULT 0,
   deleted_at TIMESTAMP WITH TIME ZONE DEFAULT NULL,
   google_access_token TEXT DEFAULT NULL,
   facebook_access_token TEXT DEFAULT NULL,
@@ -59,15 +60,45 @@ CREATE TABLE IF NOT EXISTS events(
   title TEXT,
   category TEXT,
   cover_photo_id INT REFERENCES uploads(id) ON DELETE CASCADE,
-  start_timestamp TIMESTAMP WITH TIME ZONE, -- Combined start date and time
-  end_timestamp TIMESTAMP WITH TIME ZONE,   -- Combined end date and time
-  event_type TEXT,                          -- online or onsite
-  virtual_link TEXT,                        -- online type
-  location JSONB,                           -- onsite type
+  start_timestamp TIMESTAMP WITH TIME ZONE,
+  -- Combined start date and time
+  end_timestamp TIMESTAMP WITH TIME ZONE,
+  -- Combined end date and time
+  event_type TEXT,
+  -- online or onsite
+  virtual_link TEXT,
+  -- online type
+  location JSONB,
+  -- onsite type
   event_details TEXT,
   no_guests INT,
-  privacy TEXT,                             -- public or private
+  privacy TEXT,
+  -- public or private
   suggested_items TEXT [],
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS attendee_tasks(
+  id SERIAL PRIMARY KEY,
+  event_id INT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  -- assigned event
+  user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  -- assigned user
+  text TEXT,
+  items TEXT [],
+  start_timestamp TIMESTAMP WITH TIME ZONE,
+  end_timestamp TIMESTAMP WITH TIME ZONE,
+  type TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS attendee(
+  id SERIAL PRIMARY KEY,
+  event_id INT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  attendee_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL, 
+  status BOOLEAN DEFAULT FALSE,
+  accepted TEXT DEFAULT 'Pending',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
