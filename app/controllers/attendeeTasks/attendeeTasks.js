@@ -68,7 +68,7 @@ exports.create = async (req, res) => {
         type,
       ];
     } else {
-      if (!items ||  items.length === 0) {
+      if (!items || items.length === 0) {
         return res.status(400).json({
           status: false,
           message: "items array required for type 'items'",
@@ -107,6 +107,117 @@ exports.create = async (req, res) => {
   } catch (error) {
     console.error(error);
     return res.status(500).json({
+      status: false,
+      message: "Internal Server Error",
+    });
+  }
+};
+
+exports.updateStatus = async (req, res) => {
+  const { attendee_task_id, status } = req.body;
+  if (!attendee_task_id || !status) {
+    return res
+      .status(400)
+      .json({
+        status: false,
+        message: "attendee_task_id and status are required",
+      });
+  }
+
+  const VALID_STATUS = ["Pending", "Done"];
+
+  try {
+    if (VALID_STATUS.includes(status)) {
+      const updateQuery = "UPDATE attendee_tasks SET status = $1 WHERE id = $2 RETURNING *";
+      const result = await pool.query(updateQuery, [status, attendee_task_id]);
+      if (result.rowCount === 0) {
+        return res
+          .status(404)
+          .json({ status: false, message: "attendee_task not found" });
+      }
+
+      return res
+        .status(200)
+        .json({
+          status: true,
+          message: "attendee_task status updated successfully!",
+          result: result.rows[0],
+        });
+    } else {
+      return res.status(400).json({ status: false, message: "Invalid status" });
+    }
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      status: false,
+      message: "Internal Server Error",
+    });
+  }
+};
+
+
+
+exports.search = async (req, res) => {
+  const { name } = req.params;
+  let { page, limit } = req.query;
+
+  if (!name) {
+    return res.status(400).json({
+      status: false,
+      message: "name is required",
+    });
+  }
+
+  try {
+    const searchWords = name.split(/\s+/).filter(Boolean);
+    if (searchWords.length === 0) {
+      return res
+        .status(200)
+        .json({ status: false, message: "No search words provided" });
+    }
+
+    const conditions = searchWords.map((word, index) => {
+      return `(full_name ILIKE $${index + 1})`;
+    });
+
+    const values = searchWords.map((word) => `%${word.toLowerCase()}%`);
+    let query, offset;
+
+    if (page && limit) {
+      limit = parseInt(limit);
+      offset = (parseInt(page) - 1) * limit;
+      query = `SELECT * FROM users WHERE role = 'user' AND (${conditions.join(
+        " OR "
+      )}) ORDER BY id DESC LIMIT $${conditions.length + 1} OFFSET $${
+        conditions.length + 2
+      }`;
+      values.push(limit, offset);
+    } else {
+      query = `SELECT * FROM users WHERE role = 'user' AND (${conditions.join(
+        " OR "
+      )}) ORDER BY id DESC`;
+    }
+
+    const result = await pool.query(query, values);
+
+    if (result.rowCount < 1) {
+      return res.status(200).json({
+        status: true,
+        message: "No result found",
+        count: 0,
+        result: [],
+      });
+    }
+
+    res.json({
+      status: true,
+      message: "User retrieved successfully!",
+      count: result.rowCount,
+      result: result.rows,
+    });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({
       status: false,
       message: "Internal Server Error",
     });

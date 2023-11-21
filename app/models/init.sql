@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS users(
   block_status BOOLEAN DEFAULT FALSE,
   payment_status BOOLEAN DEFAULT FALSE,
   total_events INT DEFAULT 0,
-  total_attendee INT DEFAULT 0,
+  total_attendee INT DEFAULT 0, -- remove this column 
   deleted_at TIMESTAMP WITH TIME ZONE DEFAULT NULL,
   google_access_token TEXT DEFAULT NULL,
   facebook_access_token TEXT DEFAULT NULL,
@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS events(
   privacy TEXT,
   -- public or private
   suggested_items TEXT [],
+  total_attendee INT DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -89,6 +90,7 @@ CREATE TABLE IF NOT EXISTS attendee_tasks(
   start_timestamp TIMESTAMP WITH TIME ZONE,
   end_timestamp TIMESTAMP WITH TIME ZONE,
   type TEXT,
+  status TEXT DEFAULT 'Pending', -- Done | Pending
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );

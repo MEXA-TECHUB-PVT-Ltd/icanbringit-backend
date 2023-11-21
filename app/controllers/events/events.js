@@ -617,7 +617,7 @@ exports.getAllEventsWithDetails = async (req, res) => {
 
 
 
-exports.joinEvent = async (req, res) => {
+exports.joinEventsWithTypes = async (req, res) => {
   const { event_id, user_id, type } = req.body;
 
   if (!event_id || !user_id || !type) {
@@ -676,13 +676,12 @@ exports.joinEvent = async (req, res) => {
 
     // Update total_attendee count for the user if the type is not ADD_MEMBER
     if (type !== "ADD_MEMBER") {
-      const eventUserId = eventExists.rows[0].user_id;
       const updateTotalAttendeeQuery = `
-        UPDATE users
+        UPDATE events
         SET total_attendee = total_attendee + 1
         WHERE id = $1;
       `;
-      await pool.query(updateTotalAttendeeQuery, [eventUserId]);
+      await pool.query(updateTotalAttendeeQuery, [event_id]);
     }
 
     res.json({
