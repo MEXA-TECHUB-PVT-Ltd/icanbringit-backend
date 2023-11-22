@@ -201,7 +201,7 @@ exports.getAll = async (req, res) => {
       isPaginationProvided ? [limit, offset] : []
     );
 
-    const countQuery = `SELECT COUNT(*) FROM report;`;
+    const countQuery = `SELECT COUNT(*) FROM block_users;`;
     const countResult = await pool.query(countQuery);
 
     const totalItems = parseInt(countResult.rows[0].count);
