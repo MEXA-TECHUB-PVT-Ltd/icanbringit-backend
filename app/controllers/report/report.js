@@ -161,41 +161,77 @@ exports.get = async (req, res) => {
     });
   }
 };
+
 exports.getAll = async (req, res) => {
-  const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 10;
-  const offset = (page - 1) * limit;
+  const page = parseInt(req.query.page);
+  const limit = parseInt(req.query.limit);
+  const isPaginationProvided = !isNaN(page) && !isNaN(limit);
+  const offset = isPaginationProvided ? (page - 1) * limit : 0;
 
   try {
-    // Query to get responses
-    const query = `
-      SELECT * FROM report ORDER BY id LIMIT $1 OFFSET $2;
-    `;
+    let query;
+    if (isPaginationProvided) {
+      query = `
+        SELECT r.*, 
+               json_build_object(
+                 'id', creator.id, 
+                 'name', creator.full_name, 
+                 'email', creator.email
+               ) as report_creator,
+               json_build_object(
+                 'id', reported.id, 
+                 'name', reported.full_name, 
+                 'email', reported.email
+               ) as reported_user
+        FROM report r
+        INNER JOIN users creator ON r.report_creator_id = creator.id
+        INNER JOIN users reported ON r.reported_user_id = reported.id
+        ORDER BY r.id LIMIT $1 OFFSET $2;
+      `;
+    } else {
+      query = `
+        SELECT r.*, 
+               json_build_object(
+                 'id', creator.id, 
+                 'name', creator.full_name, 
+                 'email', creator.email
+               ) as report_creator,
+               json_build_object(
+                 'id', reported.id, 
+                 'name', reported.full_name, 
+                 'email', reported.email
+               ) as reported_user
+        FROM report r
+        INNER JOIN users creator ON r.report_creator_id = creator.id
+        INNER JOIN users reported ON r.reported_user_id = reported.id
+        ORDER BY r.id;
+      `;
+    }
 
-    const countQuery = `
-      SELECT COUNT(*) FROM report;
-    `;
+    const result = await pool.query(
+      query,
+      isPaginationProvided ? [limit, offset] : []
+    );
 
-    // Execute queries
-    const result = await pool.query(query, [limit, offset]);
+    const countQuery = `SELECT COUNT(*) FROM report;`;
     const countResult = await pool.query(countQuery);
 
     const totalItems = parseInt(countResult.rows[0].count);
-    const totalPages = Math.ceil(totalItems / limit);
+    const totalPages = isPaginationProvided ? Math.ceil(totalItems / limit) : 1;
 
     if (result.rowCount === 0) {
       return res
         .status(404)
-        .json({ status: false, message: "report events found" });
+        .json({ status: false, message: "No report events found" });
     }
 
     return res.json({
       status: true,
-      message: "report retrieved successfully",
+      message: "Report retrieved successfully",
       totalItems,
       totalPages,
-      currentPage: page,
-      itemsPerPage: limit,
+      currentPage: isPaginationProvided ? page : 1,
+      itemsPerPage: isPaginationProvided ? limit : totalItems,
       result: result.rows,
     });
   } catch (error) {
@@ -206,6 +242,7 @@ exports.getAll = async (req, res) => {
     });
   }
 };
+
 
 exports.getAllByUser = async (req, res) => {
   const { report_creator_id } = req.params;
@@ -214,18 +251,33 @@ exports.getAllByUser = async (req, res) => {
   const offset = (page - 1) * limit;
 
   try {
-    // Query to get responses
+    // Main query with JSON functions to structure the output
     const query = `
-      SELECT * FROM report WHERE report_creator_id = $1 ORDER BY id LIMIT $2 OFFSET $3;
+      SELECT json_build_object(
+               'reportDetails', json_build_object(
+                 'id', r.id, 'reason', r.reason, 
+                 'description', r.description, 'created_at', r.created_at, 
+                 'updated_at', r.updated_at
+               ),
+               'reportedUser', json_build_object(
+                 'id', reported.id, 'name', reported.full_name, 'email', reported.email
+               )
+             ) as report_data
+      FROM report r
+      INNER JOIN users creator ON r.report_creator_id = creator.id
+      INNER JOIN users reported ON r.reported_user_id = reported.id
+      WHERE r.report_creator_id = $1
+      ORDER BY r.id LIMIT $2 OFFSET $3;
     `;
 
+    // Count query specific to report_creator_id
     const countQuery = `
-      SELECT COUNT(*) FROM report;
+      SELECT COUNT(*) FROM report WHERE report_creator_id = $1;
     `;
 
     // Execute queries
     const result = await pool.query(query, [report_creator_id, limit, offset]);
-    const countResult = await pool.query(countQuery);
+    const countResult = await pool.query(countQuery, [report_creator_id]);
 
     const totalItems = parseInt(countResult.rows[0].count);
     const totalPages = Math.ceil(totalItems / limit);
@@ -233,17 +285,20 @@ exports.getAllByUser = async (req, res) => {
     if (result.rowCount === 0) {
       return res
         .status(404)
-        .json({ status: false, message: "reports not found" });
+        .json({ status: false, message: "Reports not found" });
     }
+
+    // Extracting the JSON object from each row
+    const formattedResult = result.rows.map((row) => row.report_data);
 
     return res.json({
       status: true,
-      message: "report retrieved successfully",
+      message: "Report retrieved successfully",
       totalItems,
       totalPages,
       currentPage: page,
       itemsPerPage: limit,
-      result: result.rows,
+      result: formattedResult,
     });
   } catch (error) {
     console.error(error);
@@ -253,6 +308,8 @@ exports.getAllByUser = async (req, res) => {
     });
   }
 };
+
+
 
 exports.delete = async (req, res) => {
   const { id } = req.params;

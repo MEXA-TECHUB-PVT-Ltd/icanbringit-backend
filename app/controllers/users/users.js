@@ -81,51 +81,51 @@ exports.create = async (req, res) => {
         insertQuery =
           "INSERT INTO users (email, password, role, signup_type, otp) VALUES ($1, $2, $3, $4, $5) RETURNING *";
         insertValues = [email, hashedPassword, userRole, signup_type, otp];
-        // const emailSent = await sendEmail(
-        //   email,
-        //   "Sign Up Verification",
-        //   `Thanks for signing up. Your code to verify is: ${otp}`
-        // );
-        // // Render the EJS template to a string
-        // const emailTemplatePath = path.join(
-        //   __dirname,
-        //   "..",
-        //   "..",
-        //   "views",
-        //   "emailVerification.ejs"
-        // );
-        // const dataForEjs = {
-        //   verificationCode: otp,
-        //   date: new Date().toLocaleDateString("en-US"),
-        // };
+        const emailSent = await sendEmail(
+          email,
+          "Sign Up Verification",
+          `Thanks for signing up. Your code to verify is: ${otp}`
+        );
+        // Render the EJS template to a string
+        const emailTemplatePath = path.join(
+          __dirname,
+          "..",
+          "..",
+          "views",
+          "emailVerification.ejs"
+        );
+        const dataForEjs = {
+          verificationCode: otp,
+          date: new Date().toLocaleDateString("en-US"),
+        };
 
-        // ejs.renderFile(
-        //   emailTemplatePath,
-        //   dataForEjs,
-        //   async (err, htmlContent) => {
-        //     if (err) {
-        //       console.log(err); // Handle error appropriately
-        //       return res.status(500).json({
-        //         status: false,
-        //         message: "Error rendering email template",
-        //       });
-        //     } else {
-        //       // Use the rendered HTML content for the email
-        //       const emailSent = await sendEmail(
-        //         email,
-        //         "Sign Up Verification",
-        //         htmlContent
-        //       );
+        ejs.renderFile(
+          emailTemplatePath,
+          dataForEjs,
+          async (err, htmlContent) => {
+            if (err) {
+              console.log(err); // Handle error appropriately
+              return res.status(500).json({
+                status: false,
+                message: "Error rendering email template",
+              });
+            } else {
+              // Use the rendered HTML content for the email
+              const emailSent = await sendEmail(
+                email,
+                "Sign Up Verification",
+                htmlContent
+              );
 
-        //       if (!emailSent.success) {
-        //         return res.status(500).json({
-        //           status: false,
-        //           message: emailSent.message,
-        //         });
-        //       }
-        //     }
-        //   }
-        // );
+              if (!emailSent.success) {
+                return res.status(500).json({
+                  status: false,
+                  message: emailSent.message,
+                });
+              }
+            }
+          }
+        );
         break;
       case "google":
         if (!google_access_token) {
@@ -313,6 +313,41 @@ exports.resetPassword = async (req, res) => {
   }
 };
 
+exports.updateDeactivateStatus = async (req, res) => {
+  const { user_id, deactivate } = req.body;
+  try {
+    if (!user_id || deactivate === null) {
+      return res.status(400).json({
+        status: false,
+        message: "user_id, and deactivate are required",
+      });
+    }
+    const checkUserExists = await pool.query(
+      "SELECT * FROM users WHERE id = $1 AND deleted_at IS NULL",
+      [user_id]
+    );
+    if (checkUserExists.rowCount === 0) {
+      return res.status(409).json({
+        status: false,
+        message: "User does not exist",
+      });
+    }
+
+    const query = `UPDATE users SET deactivate = $1, deleted_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *`;
+    const result = await pool.query(query, [deactivate, user_id]);
+    res.json({
+      status: true,
+      message: `User ${deactivate ? "deactivated" : "activated"} Successfully!`,
+      result: result.rows[0],
+    });
+  } catch (err) {
+    res.status(500).json({
+      status: false,
+      message: err.message,
+    });
+  }
+};
+
 exports.updatePassword = async (req, res) => {
   const { email, old_password, new_password } = req.body;
   try {
@@ -467,9 +502,10 @@ exports.getUser = async (req, res) => {
   }
 
   try {
-    const userQuery = await pool.query("SELECT * FROM users WHERE id = $1", [
-      id,
-    ]);
+    const userQuery = await pool.query(
+      "SELECT * FROM users WHERE id = $1 AND role = 'user'",
+      [id]
+    );
 
     if (userQuery.rowCount === 0) {
       return res.status(404).json({
@@ -494,8 +530,16 @@ exports.getUser = async (req, res) => {
 
 exports.getAllUsers = async (req, res) => {
   try {
-    const { page, limit, offset, total, totalPages } =
-      await getPaginatedResults(req, "users");
+    // Retrieve or default pagination parameters
+    let {
+      page = 1,
+      limit = "ALL",
+      offset = 0,
+      total,
+      totalPages,
+    } = await getPaginatedResults(req, "users");
+
+    // Adjust the getPaginatedResults function or its calling pattern to handle 'ALL' limit
 
     if (total === 0) {
       return sendSuccessResponse(res, "No users found", {
@@ -506,18 +550,26 @@ exports.getAllUsers = async (req, res) => {
       });
     }
 
-    const userQuery = await pool.query(
-      "SELECT * FROM users WHERE deleted_at IS NULL  ORDER BY id LIMIT $1 OFFSET $2",
-      [limit, offset]
-    );
+    // Adjust the query based on whether a limit is set
+    let userQuery;
+    if (limit === "ALL") {
+      userQuery = await pool.query(
+        "SELECT * FROM users WHERE deleted_at IS NULL AND role = 'user' ORDER BY id"
+      );
+    } else {
+      userQuery = await pool.query(
+        "SELECT * FROM users WHERE deleted_at IS NULL AND role = 'user' ORDER BY id LIMIT $1 OFFSET $2",
+        [limit, offset]
+      );
+    }
 
     const users = userQuery.rows.map(
       ({ password, otp, ...userWithoutPassword }) => userWithoutPassword
     );
 
     sendSuccessResponse(res, "Users retrieved successfully", {
-      currentPage: page,
-      totalPages,
+      currentPage: limit === "ALL" ? 1 : page,
+      totalPages: limit === "ALL" ? 1 : totalPages,
       totalUsers: total,
       result: users,
     });
@@ -540,7 +592,7 @@ exports.getRecentlyDeletedUsers = async (req, res) => {
         users
       WHERE
         deleted_at IS NOT NULL
-        AND deleted_at > (${currentTimestamp} - INTERVAL '90 days')
+        AND deleted_at > (${currentTimestamp} - INTERVAL '90 days') AND role = 'user'
       ORDER BY
         deleted_at DESC
     `;
@@ -591,10 +643,9 @@ exports.deleteUser = async (req, res) => {
   }
 
   try {
-    const userExists = await pool.query(
-      "SELECT 1 FROM users WHERE id = $1 AND deleted_at IS NULL",
-      [userId]
-    );
+    const userExists = await pool.query("SELECT 1 FROM users WHERE id = $1", [
+      userId,
+    ]);
     if (userExists.rowCount === 0) {
       return res.status(404).json({
         status: false,
@@ -602,14 +653,45 @@ exports.deleteUser = async (req, res) => {
       });
     }
 
-    await pool.query(
-      "UPDATE users SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1",
+    const result = await pool.query(
+      "DELETE FROM  users WHERE id = $1 AND role = 'user' RETURNING *",
       [userId]
     );
+
+    if (result.rowCount === 0) {
+      return res.status(400).json({
+        status: false,
+        message: "Error while deleting",
+      });
+    }
 
     return res.status(200).json({
       status: true,
       message: "User deleted successfully",
+      result: result.rows[0],
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      status: false,
+      message: "Internal Server Error",
+    });
+  }
+};
+
+exports.deleteAllUser = async (req, res) => {
+  try {
+    const result = await pool.query("DELETE FROM  users WHERE role = 'user' RETURNING *");
+    if (result.rowCount === 0) {
+      return res.status(400).json({
+        status: false,
+        message: "No users found to delete",
+      });
+    }
+    return res.status(200).json({
+      status: true,
+      message: "User deleted successfully",
+      result: result.rows[0],
     });
   } catch (error) {
     console.error(error);
@@ -738,42 +820,58 @@ exports.updateBlockStatus = async (req, res) => {
     });
   }
 };
-
 exports.getUsersByCountry = async (req, res) => {
   try {
     const { country } = req.params;
-    const { page, limit, offset, total, totalPages } =
-      await getPaginatedResults(req, "users");
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = req.query.limit ? parseInt(req.query.limit, 10) : "ALL";
+    const offset = limit !== "ALL" && !isNaN(page) ? (page - 1) * limit : 0;
 
-    if (total === 0) {
-      return sendSuccessResponse(res, "No users found", {
-        users: [],
-        currentPage: page,
-        totalPages: 0,
-        totalUsers: total,
+    // Use ILIKE for case-insensitive matching and '%' for partial matching
+    const countryPattern = `%${country}%`;
+
+    // Count total users from the specified country (or partial match)
+    const countQuery = `
+      SELECT COUNT(*) FROM users 
+      WHERE country ILIKE $1 AND deleted_at IS NULL
+    `;
+    const countResult = await pool.query(countQuery, [countryPattern]);
+    const totalUsers = parseInt(countResult.rows[0].count, 10);
+
+    if (totalUsers === 0) {
+      return res.status(404).json({
+        status: false,
+        message: "No users found in this country",
       });
     }
 
-    const userQuery = await pool.query(
-      "SELECT * FROM users WHERE country = $1 AND deleted_at IS NULL  ORDER BY id LIMIT $2 OFFSET $3",
-      [country, limit, offset]
-    );
+    // Fetch users with pagination if limit is not 'ALL'
+    let userQuery;
+    if (limit === "ALL") {
+      userQuery = await pool.query(
+        "SELECT * FROM users WHERE country ILIKE $1 AND deleted_at IS NULL ORDER BY id",
+        [countryPattern]
+      );
+    } else {
+      userQuery = await pool.query(
+        "SELECT * FROM users WHERE country ILIKE $1 AND deleted_at IS NULL ORDER BY id LIMIT $2 OFFSET $3",
+        [countryPattern, limit, offset]
+      );
+    }
 
     const users = userQuery.rows.map(
       ({ password, otp, ...userWithoutPassword }) => userWithoutPassword
     );
 
-    if (userQuery.rowCount === 0) {
-      return res.status(404).json({
-        status: false,
-        message: "Users not found of this country",
-      });
-    }
-    sendSuccessResponse(res, "Users retrieved successfully", {
-      currentPage: page,
+    const totalPages = limit !== "ALL" ? Math.ceil(totalUsers / limit) : 1;
+
+    res.json({
+      status: true,
+      message: "Users retrieved successfully",
+      currentPage: limit !== "ALL" ? page : 1,
       totalPages,
-      totalUsers: total,
-      result: users,
+      totalUsers,
+      users,
     });
   } catch (error) {
     console.error(error);
@@ -787,7 +885,7 @@ exports.addByYear = async (req, res) => {
             SELECT 
                 EXTRACT(YEAR FROM created_at) AS year, 
                 COUNT(*) AS user_count 
-            FROM users 
+            FROM users WHERE role = 'user'
             GROUP BY year 
             ORDER BY year DESC;
         `;

@@ -1,30 +1,30 @@
 const { pool } = require("../../config/db.config");
 
 exports.create = async (req, res) => {
-  const { type, text, options } = req.body;
+  const { type, text } = req.body;
 
   // Check for required fields
-  if (!type || !text || options.length === 0) {
+  if (!type || !text) {
     return res.status(400).json({
       status: false,
-      message: "Type, Text and options are required.",
+      message: "Type, and text are required.",
     });
   }
-  if (type !== "event" && type !== "food") {
+  if (type !== "event_category" && type !== "food") {
     return res.status(400).json({
       status: false,
-      message: "Type must be event and food",
+      message: "Type must be event_category and food",
     });
   }
 
   try {
     const query = `
-      INSERT INTO question_types (text, options, type)
-      VALUES ($1, $2, $3)
+      INSERT INTO question_types ( text, type)
+      VALUES ($1, $2)
       RETURNING *;
     `;
 
-    const result = await pool.query(query, [text, options || [], type]);
+    const result = await pool.query(query, [ text, type]);
 
     if (result.rowCount === 0) {
       return res.status(400).json({
@@ -49,32 +49,32 @@ exports.create = async (req, res) => {
 
 
 exports.update = async (req, res) => {
-  const { id, text, options, type } = req.body;
+  const { id,  text, type } = req.body;
 
   // Check for required fields
-  if (!id || !text || !options || !type) {
+  if (!id || !text || !type) {
     return res.status(400).json({
       status: false,
-      message: "ID, Type, Text, and Options are required.",
+      message: "ID, Type, and text are required.",
     });
   }
 
-  if (type !== "event" && type !== "food") {
+  if (type !== "event_category" && type !== "food") {
     return res.status(400).json({
       status: false,
-      message: "Type must be 'event' or 'food'",
+      message: "Type must be 'event_category' or 'food'",
     });
   }
 
   try {
     const query = `
       UPDATE question_types
-      SET text = $1, options = $2, type = $3, updated_at = NOW()
-      WHERE id = $4
+      SET  text = $1, type = $2, updated_at = NOW()
+      WHERE id = $3
       RETURNING *;
     `;
 
-    const result = await pool.query(query, [text, options, type, id]);
+    const result = await pool.query(query, [ text, type, id]);
 
     if (result.rowCount === 0) {
       return res.status(404).json({
