@@ -241,26 +241,58 @@ exports.get = async (req, res) => {
     });
   }
 };
-
 exports.getAll = async (req, res) => {
-  const { user_id } = req.params;
+  const id = parseInt(req.query.id);
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
   const offset = (page - 1) * limit;
 
   try {
-    // Query to get responses
-    const query = `
-      SELECT * FROM events WHERE user_id = $1 ORDER BY id LIMIT $2 OFFSET $3;
-    `;
+    let query, countQuery;
+    if (id) {
+      // Combine conditions for excluding events from reported and blocked users
+      const exclusionCondition = `
+        WHERE e.user_id NOT IN (
+          SELECT reported_user_id 
+          FROM report 
+          WHERE report_creator_id = $1
+        ) AND e.user_id NOT IN (
+          SELECT block_user_id 
+          FROM block_users 
+          WHERE block_creator_id = $1 AND status = TRUE
+        ) AND e.user_id NOT IN (
+          SELECT block_creator_id 
+          FROM block_users 
+          WHERE block_user_id = $1 AND status = TRUE
+        )
+      `;
 
-    const countQuery = `
-      SELECT COUNT(*) FROM events;
-    `;
+      query = `
+        SELECT e.* 
+        FROM events e
+        ${exclusionCondition}
+        ORDER BY e.id LIMIT $2 OFFSET $3;
+      `;
+      countQuery = `
+        SELECT COUNT(*) FROM events e
+        ${exclusionCondition};
+      `;
+    } else {
+      // If no ID is provided, fetch all events
+      query = `
+        SELECT * FROM events ORDER BY id LIMIT $1 OFFSET $2;
+      `;
+      countQuery = `
+        SELECT COUNT(*) FROM events;
+      `;
+    }
 
     // Execute queries
-    const result = await pool.query(query, [user_id, limit, offset]);
-    const countResult = await pool.query(countQuery);
+    const result = await pool.query(
+      query,
+      id ? [id, limit, offset] : [limit, offset]
+    );
+    const countResult = await pool.query(countQuery, id ? [id] : []);
 
     const totalItems = parseInt(countResult.rows[0].count);
     const totalPages = Math.ceil(totalItems / limit);
@@ -287,6 +319,58 @@ exports.getAll = async (req, res) => {
     });
   }
 };
+
+
+
+exports.getAllByUser = async (req, res) => {
+  const { user_id } = req.params;
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  const offset = (page - 1) * limit;
+
+  try {
+    // Query to get events created by the specific user
+    const query = `
+      SELECT * FROM events WHERE user_id = $1 ORDER BY id LIMIT $2 OFFSET $3;
+    `;
+
+    // Adjusted count query to match the user_id filter
+    const countQuery = `
+      SELECT COUNT(*) FROM events WHERE user_id = $1;
+    `;
+
+    // Execute queries
+    const result = await pool.query(query, [user_id, limit, offset]);
+    const countResult = await pool.query(countQuery, [user_id]);
+
+    const totalItems = parseInt(countResult.rows[0].count);
+    const totalPages = Math.ceil(totalItems / limit);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({
+        status: false,
+        message: "No events found",
+      });
+    }
+
+    return res.json({
+      status: true,
+      message: "Event retrieved successfully",
+      totalItems,
+      totalPages,
+      currentPage: page,
+      itemsPerPage: limit,
+      events: result.rows,
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      status: false,
+      message: error.message,
+    });
+  }
+};
+
 
 exports.getAllByCategory = async (req, res) => {
   const { category } = req.params;
@@ -615,8 +699,6 @@ exports.getAllEventsWithDetails = async (req, res) => {
   }
 };
 
-
-
 exports.joinEventsWithTypes = async (req, res) => {
   const { event_id, user_id, type } = req.body;
 
@@ -626,6 +708,19 @@ exports.joinEventsWithTypes = async (req, res) => {
       message: "event_id, user_id and type are required",
     });
   }
+
+  const ALL_TYPES = [
+    "JOIN_PUBLIC_EVENT",
+    "ACCEPT_INVITATION",
+    "ADD_MEMBER",
+    "REJECT_INVITATION",
+  ];
+
+  if (!ALL_TYPES.includes(type)) {
+    return res.status(400).json({ status: false, message: "Invalid type" });
+  }
+
+  const TYPES_TO_UPDATE_COUNT = ["JOIN_PUBLIC_EVENT", "ACCEPT_INVITATION"];
 
   try {
     // Check if the event exists
@@ -646,44 +741,44 @@ exports.joinEventsWithTypes = async (req, res) => {
       return res.status(404).json({ status: false, message: "User not found" });
     }
 
-    // Prepare query based on type
-    let insertAttendeeQuery, queryParams, status, accepted;
-    switch (type) {
-      case "JOIN_EVENT":
-        status = true;
-        accepted = "Pending";
-        break;
-      case "ADD_MEMBER":
-        status = false;
-        accepted = "Pending";
-        break;
-      case "INVITATION":
-        status = true;
-        accepted = "Accepted";
-        break;
-      default:
-        return res.status(400).json({ status: false, message: "Invalid type" });
-    }
-
-    insertAttendeeQuery = `
+    // Insert into attendee table
+    const insertAttendeeQuery = `
       INSERT INTO attendee (event_id, attendee_id, type, status, accepted)
       VALUES ($1, $2, $3, $4, $5)
       RETURNING *;
     `;
-    queryParams = [event_id, user_id, type, status, accepted];
 
-    const newAttendee = await pool.query(insertAttendeeQuery, queryParams);
+    const status = type === "JOIN_PUBLIC_EVENT" || type === "ACCEPT_INVITATION";
+    const accepted =
+      type === "JOIN_PUBLIC_EVENT"
+        ? "Pending"
+        : type === "ACCEPT_INVITATION"
+        ? "Accepted"
+        : "Pending";
 
-    // Update total_attendee count for the user if the type is not ADD_MEMBER
-    if (type !== "ADD_MEMBER") {
+    const newAttendee = await pool.query(insertAttendeeQuery, [
+      event_id,
+      user_id,
+      type,
+      status,
+      accepted,
+    ]);
+
+    // Update total attendees count for specific types
+    if (TYPES_TO_UPDATE_COUNT.includes(type)) {
       const updateTotalAttendeeQuery = `
         UPDATE events
         SET total_attendee = total_attendee + 1
         WHERE id = $1;
       `;
       await pool.query(updateTotalAttendeeQuery, [event_id]);
+      const insertEventStatusQuery = `
+      INSERT INTO events_status (event_id, user_id)
+      VALUES ($1, $2)
+      RETURNING *;
+      `;
+      await pool.query(insertEventStatusQuery, [event_id, user_id]);
     }
-
     res.json({
       status: true,
       message: "Operation successful",
@@ -692,5 +787,152 @@ exports.joinEventsWithTypes = async (req, res) => {
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ status: false, message: "Internal server error" });
+  }
+};
+
+exports.updateJoinEventAttendeeTypeAndStatus = async (req, res) => {
+  const { attendee_id, new_type } = req.body;
+
+  if (!attendee_id || !new_type) {
+    return res.status(400).json({
+      status: false,
+      message: "attendee_id and new_type are required",
+    });
+  }
+
+  const ALL_TYPES = [
+    "JOIN_PUBLIC_EVENT",
+    "ACCEPT_INVITATION",
+    "ADD_MEMBER",
+    "REJECT_INVITATION",
+  ];
+
+  if (!ALL_TYPES.includes(new_type)) {
+    return res.status(400).json({ status: false, message: "Invalid new_type" });
+  }
+
+  const TYPES_TO_INCREMENT_COUNT = ["JOIN_PUBLIC_EVENT", "ACCEPT_INVITATION"];
+
+  try {
+    const attendeeExists = await pool.query(
+      "SELECT * FROM attendee WHERE id = $1",
+      [attendee_id]
+    );
+    if (attendeeExists.rowCount === 0) {
+      return res
+        .status(404)
+        .json({ status: false, message: "Attendee not found" });
+    }
+
+    const event_id = attendeeExists.rows[0].event_id;
+
+    const status =
+      new_type === "JOIN_PUBLIC_EVENT" || new_type === "ACCEPT_INVITATION";
+    const accepted =
+      new_type === "JOIN_PUBLIC_EVENT"
+        ? "Pending"
+        : new_type === "ACCEPT_INVITATION"
+        ? "Accepted"
+        : "Pending";
+
+    const updateAttendeeQuery = `
+      UPDATE attendee
+      SET type = $1, status = $2, accepted = $3
+      WHERE id = $4
+      RETURNING *;
+    `;
+    const result = await pool.query(updateAttendeeQuery, [
+      new_type,
+      status,
+      accepted,
+      attendee_id,
+    ]);
+
+    const user_id = result.rows[0].attendee_id;
+
+    // handle the incremented or decremented count users rejecting or accepting multiple time
+
+    // Increment total attendees count only for specific types
+    if (TYPES_TO_INCREMENT_COUNT.includes(new_type)) {
+      const updateTotalAttendeeQuery = `
+        UPDATE events
+        SET total_attendee = total_attendee + 1
+        WHERE id = $1;
+      `;
+      await pool.query(updateTotalAttendeeQuery, [event_id]);
+      const insertEventStatusQuery = `
+      INSERT INTO events_status (event_id, user_id)
+      VALUES ($1, $2)
+      RETURNING *;
+      `;
+      await pool.query(insertEventStatusQuery, [event_id, user_id]);
+    }
+
+    res.json({
+      status: true,
+      message: "Attendee updated successfully",
+      attendee: result.rows[0],
+    });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({
+      status: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+exports.getAllUpComingByUser = async (req, res) => {
+  const { user_id } = req.params;
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  const offset = (page - 1) * limit;
+
+  try {
+    const userColumns = ["id", "email", "full_name", "city", "country"];
+
+    const query = `
+      SELECT es.*, e.*, ${userColumns.map((col) => "u." + col).join(", ")}
+      FROM events_status es
+      JOIN events e ON es.event_id = e.id
+      JOIN users u ON es.user_id = u.id
+      WHERE es.user_id = $1 AND es.status = 'UpComing'
+      ORDER BY es.id
+      LIMIT $2 OFFSET $3;
+    `;
+
+    const countQuery = `
+      SELECT COUNT(*) FROM events_status WHERE user_id = $1 AND status = 'UpComing';
+    `;
+
+    // Execute queries
+    const result = await pool.query(query, [user_id, limit, offset]);
+    const countResult = await pool.query(countQuery, [user_id]);
+
+    const totalItems = parseInt(countResult.rows[0].count);
+    const totalPages = Math.ceil(totalItems / limit);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({
+        status: false,
+        message: "No upcoming events found for this user",
+      });
+    }
+
+    return res.json({
+      status: true,
+      message: "All upcoming events retrieved successfully",
+      totalItems,
+      totalPages,
+      currentPage: page,
+      itemsPerPage: limit,
+      events: result.rows,
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      status: false,
+      message: error.message,
+    });
   }
 };

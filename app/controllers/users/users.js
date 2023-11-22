@@ -394,12 +394,10 @@ exports.signIn = async (req, res) => {
     // Handle password-based sign-in
     if (signup_type === "email") {
       if (!password) {
-        return res
-          .status(400)
-          .json({
-            status: false,
-            message: "Password is required for email sign-in",
-          });
+        return res.status(400).json({
+          status: false,
+          message: "Password is required for email sign-in",
+        });
       }
       const isMatch = await bcrypt.compare(password, user.password);
       if (!isMatch) {
@@ -458,7 +456,6 @@ exports.signIn = async (req, res) => {
     return res.status(500).json({ status: false, message: error.message });
   }
 };
-
 
 exports.getUser = async (req, res) => {
   const { id } = req.params;
@@ -812,10 +809,9 @@ exports.addByYear = async (req, res) => {
   }
 };
 
-
-
 exports.search = async (req, res) => {
   const { name } = req.params;
+  const id = parseInt(req.query.id);
   let { page, limit } = req.query;
 
   if (!name) {
@@ -824,7 +820,6 @@ exports.search = async (req, res) => {
       message: "name is required",
     });
   }
-
 
   try {
     const searchWords = name.split(/\s+/).filter(Boolean);
@@ -841,19 +836,38 @@ exports.search = async (req, res) => {
     const values = searchWords.map((word) => `%${word.toLowerCase()}%`);
     let query, offset;
 
+    // Combine conditions for excluding reported and blocked users
+    let exclusionCondition = "";
+    if (id) {
+      exclusionCondition = `AND id NOT IN (
+        SELECT reported_user_id FROM report WHERE report_creator_id = $${
+          conditions.length + 1
+        }
+      ) AND id NOT IN (
+        SELECT block_user_id FROM block_users WHERE block_creator_id = $${
+          conditions.length + 1
+        } AND status = TRUE
+      ) AND id NOT IN (
+        SELECT block_creator_id FROM block_users WHERE block_user_id = $${
+          conditions.length + 1
+        } AND status = TRUE
+      )`;
+      values.push(id);
+    }
+
     if (page && limit) {
       limit = parseInt(limit);
       offset = (parseInt(page) - 1) * limit;
       query = `SELECT * FROM users WHERE role = 'user' AND (${conditions.join(
         " OR "
-      )}) ORDER BY id DESC LIMIT $${conditions.length + 1} OFFSET $${
+      )}) ${exclusionCondition} ORDER BY id DESC LIMIT $${
         conditions.length + 2
-      }`;
+      } OFFSET $${conditions.length + 3}`;
       values.push(limit, offset);
     } else {
       query = `SELECT * FROM users WHERE role = 'user' AND (${conditions.join(
         " OR "
-      )}) ORDER BY id DESC`;
+      )}) ${exclusionCondition} ORDER BY id DESC`;
     }
 
     const result = await pool.query(query, values);

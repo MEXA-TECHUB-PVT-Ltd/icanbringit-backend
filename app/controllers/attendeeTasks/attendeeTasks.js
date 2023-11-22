@@ -1,6 +1,6 @@
 const { pool } = require("../../config/db.config");
 
-exports.create = async (req, res) => {
+exports.createTasks = async (req, res) => {
   const {
     event_id,
     user_id,
@@ -116,19 +116,18 @@ exports.create = async (req, res) => {
 exports.updateStatus = async (req, res) => {
   const { attendee_task_id, status } = req.body;
   if (!attendee_task_id || !status) {
-    return res
-      .status(400)
-      .json({
-        status: false,
-        message: "attendee_task_id and status are required",
-      });
+    return res.status(400).json({
+      status: false,
+      message: "attendee_task_id and status are required",
+    });
   }
 
   const VALID_STATUS = ["Pending", "Done"];
 
   try {
     if (VALID_STATUS.includes(status)) {
-      const updateQuery = "UPDATE attendee_tasks SET status = $1 WHERE id = $2 RETURNING *";
+      const updateQuery =
+        "UPDATE attendee_tasks SET status = $1 WHERE id = $2 RETURNING *";
       const result = await pool.query(updateQuery, [status, attendee_task_id]);
       if (result.rowCount === 0) {
         return res
@@ -136,13 +135,11 @@ exports.updateStatus = async (req, res) => {
           .json({ status: false, message: "attendee_task not found" });
       }
 
-      return res
-        .status(200)
-        .json({
-          status: true,
-          message: "attendee_task status updated successfully!",
-          result: result.rows[0],
-        });
+      return res.status(200).json({
+        status: true,
+        message: "attendee_task status updated successfully!",
+        result: result.rows[0],
+      });
     } else {
       return res.status(400).json({ status: false, message: "Invalid status" });
     }
@@ -156,6 +153,57 @@ exports.updateStatus = async (req, res) => {
 };
 
 
+exports.getAllEventAttendee = async (req, res) => {
+  const { event_id } = req.params;
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  const offset = (page - 1) * limit;
+
+  try {
+    // Query to get attendees of a specific event
+    const query = `
+      SELECT a.*, u.full_name, u.email
+      FROM attendee a
+      JOIN users u ON a.attendee_id = u.id
+      WHERE a.event_id = $1
+      ORDER BY a.id
+      LIMIT $2 OFFSET $3;
+    `;
+
+    const countQuery = `
+      SELECT COUNT(*) FROM attendee WHERE event_id = $1;
+    `;
+
+    // Execute queries
+    const result = await pool.query(query, [event_id, limit, offset]);
+    const countResult = await pool.query(countQuery, [event_id]);
+
+    const totalItems = parseInt(countResult.rows[0].count);
+    const totalPages = Math.ceil(totalItems / limit);
+
+    if (result.rowCount === 0) {
+      return res
+        .status(404)
+        .json({ status: false, message: "No attendees found for this event" });
+    }
+
+    return res.json({
+      status: true,
+      message: "Attendees retrieved successfully",
+      totalItems,
+      totalPages,
+      currentPage: page,
+      itemsPerPage: limit,
+      attendees: result.rows,
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      status: false,
+      message: error.message,
+    });
+  }
+};
 
 exports.search = async (req, res) => {
   const { name } = req.params;
@@ -177,7 +225,7 @@ exports.search = async (req, res) => {
     }
 
     const conditions = searchWords.map((word, index) => {
-      return `(full_name ILIKE $${index + 1})`;
+      return `(u.full_name ILIKE $${index + 1})`;
     });
 
     const values = searchWords.map((word) => `%${word.toLowerCase()}%`);
@@ -186,21 +234,31 @@ exports.search = async (req, res) => {
     if (page && limit) {
       limit = parseInt(limit);
       offset = (parseInt(page) - 1) * limit;
-      query = `SELECT * FROM users WHERE role = 'user' AND (${conditions.join(
-        " OR "
-      )}) ORDER BY id DESC LIMIT $${conditions.length + 1} OFFSET $${
-        conditions.length + 2
-      }`;
+      query = `
+        SELECT u.*, a.event_id 
+        FROM users u
+        JOIN attendee a ON u.id = a.attendee_id
+        WHERE (${conditions.join(" OR ")})
+        ORDER BY u.id DESC
+        LIMIT $${conditions.length + 1} OFFSET $${conditions.length + 2}
+      `;
       values.push(limit, offset);
     } else {
-      query = `SELECT * FROM users WHERE role = 'user' AND (${conditions.join(
-        " OR "
-      )}) ORDER BY id DESC`;
+      query = `
+        SELECT u.*, a.event_id 
+        FROM users u
+        JOIN attendee a ON u.id = a.attendee_id
+        WHERE (${conditions.join(" OR ")})
+        ORDER BY u.id DESC
+      `;
     }
+
+    console.log("Executing query:", query);
+    console.log("With values:", values);
 
     const result = await pool.query(query, values);
 
-    if (result.rowCount < 1) {
+    if (result.rowCount === 0) {
       return res.status(200).json({
         status: true,
         message: "No result found",
@@ -211,7 +269,7 @@ exports.search = async (req, res) => {
 
     res.json({
       status: true,
-      message: "User retrieved successfully!",
+      message: "Attendees retrieved successfully!",
       count: result.rowCount,
       result: result.rows,
     });
