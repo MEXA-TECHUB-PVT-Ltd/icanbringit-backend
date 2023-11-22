@@ -10,7 +10,6 @@ exports.create = async (req, res) => {
     });
   }
 
-
   try {
     const checkUserExists = await pool.query(
       "SELECT 1 FROM users WHERE id = $1",
@@ -88,10 +87,7 @@ exports.update = async (req, res) => {
       RETURNING *;
     `;
 
-    const result = await pool.query(query, [
-      status,
-      id,
-    ]);
+    const result = await pool.query(query, [status, id]);
 
     if (result.rowCount === 0) {
       return res.status(404).json({
@@ -153,41 +149,77 @@ exports.get = async (req, res) => {
     });
   }
 };
+
 exports.getAll = async (req, res) => {
-  const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 10;
-  const offset = (page - 1) * limit;
+  const page = parseInt(req.query.page);
+  const limit = parseInt(req.query.limit);
+  const isPaginationProvided = !isNaN(page) && !isNaN(limit);
+  const offset = isPaginationProvided ? (page - 1) * limit : 0;
 
   try {
-    // Query to get responses
-    const query = `
-      SELECT * FROM report ORDER BY id LIMIT $1 OFFSET $2;
-    `;
+    let query;
+    if (isPaginationProvided) {
+      query = `
+        SELECT r.*, 
+               json_build_object(
+                 'id', creator.id, 
+                 'name', creator.full_name, 
+                 'email', creator.email
+               ) as report_creator,
+               json_build_object(
+                 'id', block_user.id, 
+                 'name', block_user.full_name, 
+                 'email', block_user.email
+               ) as block_user_user
+        FROM block_users r
+        INNER JOIN users creator ON r.block_creator_id = creator.id
+        INNER JOIN users block_user ON r.block_user_id = block_user.id
+        ORDER BY r.id LIMIT $1 OFFSET $2;
+      `;
+    } else {
+      query = `
+        SELECT r.*, 
+               json_build_object(
+                 'id', creator.id, 
+                 'name', creator.full_name, 
+                 'email', creator.email
+               ) as report_creator,
+               json_build_object(
+                 'id', block_user.id, 
+                 'name', block_user.full_name, 
+                 'email', block_user.email
+               ) as block_user_user
+        FROM block_users r
+        INNER JOIN users creator ON r.block_creator_id = creator.id
+        INNER JOIN users block_user ON r.block_user_id = block_user.id
+        ORDER BY r.id;
+      `;
+    }
 
-    const countQuery = `
-      SELECT COUNT(*) FROM report;
-    `;
+    const result = await pool.query(
+      query,
+      isPaginationProvided ? [limit, offset] : []
+    );
 
-    // Execute queries
-    const result = await pool.query(query, [limit, offset]);
+    const countQuery = `SELECT COUNT(*) FROM report;`;
     const countResult = await pool.query(countQuery);
 
     const totalItems = parseInt(countResult.rows[0].count);
-    const totalPages = Math.ceil(totalItems / limit);
+    const totalPages = isPaginationProvided ? Math.ceil(totalItems / limit) : 1;
 
     if (result.rowCount === 0) {
       return res
         .status(404)
-        .json({ status: false, message: "report events found" });
+        .json({ status: false, message: "No block_users found" });
     }
 
     return res.json({
       status: true,
-      message: "report retrieved successfully",
+      message: "Block retrieved successfully",
       totalItems,
       totalPages,
-      currentPage: page,
-      itemsPerPage: limit,
+      currentPage: isPaginationProvided ? page : 1,
+      itemsPerPage: isPaginationProvided ? limit : totalItems,
       result: result.rows,
     });
   } catch (error) {
@@ -198,41 +230,71 @@ exports.getAll = async (req, res) => {
     });
   }
 };
+
 
 exports.getAllByUser = async (req, res) => {
   const { block_creator_id } = req.params;
-  const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 10;
-  const offset = (page - 1) * limit;
+  const page = parseInt(req.query.page);
+  const limit = parseInt(req.query.limit);
+  const isPaginationProvided = !isNaN(page) && !isNaN(limit);
+  const offset = isPaginationProvided ? (page - 1) * limit : 0;
 
   try {
-    const query = `
-      SELECT * FROM block_users WHERE block_creator_id = $1 AND status = true ORDER BY id LIMIT $2 OFFSET $3;
-    `;
+    let query;
+    if (isPaginationProvided) {
+      query = `
+        SELECT bu.*, 
+               json_build_object(
+                 'id', u.id, 
+                 'name', u.full_name, 
+                 'email', u.email
+               ) as blocked_user_details
+        FROM block_users bu
+        INNER JOIN users u ON bu.blocked_user_id = u.id
+        WHERE bu.block_creator_id = $1 AND bu.status = true
+        ORDER BY bu.id LIMIT $2 OFFSET $3;
+      `;
+    } else {
+      query = `
+        SELECT bu.*, 
+               json_build_object(
+                 'id', u.id, 
+                 'name', u.full_name, 
+                 'email', u.email
+               ) as blocked_user_details
+        FROM block_users bu
+        INNER JOIN users u ON bu.block_user_id = u.id
+        WHERE bu.block_creator_id = $1 AND bu.status = true
+        ORDER BY bu.id;
+      `;
+    }
 
-    const countQuery = `
-      SELECT COUNT(*) FROM block_users;
-    `;
+    const result = await pool.query(
+      query,
+      isPaginationProvided
+        ? [block_creator_id, limit, offset]
+        : [block_creator_id]
+    );
 
-    const result = await pool.query(query, [block_creator_id, limit, offset]);
-    const countResult = await pool.query(countQuery);
+    const countQuery = `SELECT COUNT(*) FROM block_users WHERE block_creator_id = $1;`;
+    const countResult = await pool.query(countQuery, [block_creator_id]);
 
     const totalItems = parseInt(countResult.rows[0].count);
-    const totalPages = Math.ceil(totalItems / limit);
+    const totalPages = isPaginationProvided ? Math.ceil(totalItems / limit) : 1;
 
     if (result.rowCount === 0) {
       return res
         .status(404)
-        .json({ status: false, message: "block users not found" });
+        .json({ status: false, message: "Block users not found" });
     }
 
     return res.json({
       status: true,
-      message: "block users retrieved successfully",
+      message: "Block users retrieved successfully",
       totalItems,
       totalPages,
-      currentPage: page,
-      itemsPerPage: limit,
+      currentPage: isPaginationProvided ? page : 1,
+      itemsPerPage: isPaginationProvided ? limit : totalItems,
       result: result.rows,
     });
   } catch (error) {
@@ -243,6 +305,7 @@ exports.getAllByUser = async (req, res) => {
     });
   }
 };
+
 
 exports.delete = async (req, res) => {
   const { id } = req.params;

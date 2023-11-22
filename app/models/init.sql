@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS users(
   total_events INT DEFAULT 0,
   deleted_at TIMESTAMP WITH TIME ZONE DEFAULT NULL,
   is_deleted BOOLEAN DEFAULT FALSE,
+  deactivate BOOLEAN DEFAULT FALSE,
   google_access_token TEXT DEFAULT NULL,
   facebook_access_token TEXT DEFAULT NULL,
   apple_access_token TEXT DEFAULT NULL,

@@ -10,6 +10,7 @@ router.put("/resetPassword", controller.resetPassword);
 router.put("/updatePassword", controller.updatePassword);
 router.put("/updateProfile", controller.updateProfile);
 router.put("/updateBlockStatus", controller.updateBlockStatus);
+router.put("/updateDeactivateStatus", controller.updateDeactivateStatus);
 router.post("/signIn", controller.signIn);
 router.get("/get/:id", controller.getUser);
 router.get("/search/:name", controller.search);
@@ -18,6 +19,7 @@ router.get("/addByYear", controller.addByYear);
 router.get("/getAll", controller.getAllUsers);
 router.get("/getRecentlyDeletedUsers", controller.getRecentlyDeletedUsers);
 router.delete("/delete/:id", controller.deleteUser);
+router.delete("/deleteAllUser", controller.deleteAllUser);
 
 
 

@@ -27,18 +27,31 @@ exports.sendSuccessResponse = (res, message, data, status = 200) => {
 
 
 exports.getPaginatedResults = async (req, tableName) => {
-  const page = parseInt(req.query.page, 10) || 1;
-  const limit = parseInt(req.query.limit, 10) || 10;
-  const offset = (page - 1) * limit;
+  // Parse page and limit, but don't set defaults immediately
+  const page = parseInt(req.query.page, 10);
+  const limit = req.query.limit ? parseInt(req.query.limit, 10) : "ALL";
 
-  const countResult = await pool.query(
-    `SELECT COUNT(*) FROM ${tableName} WHERE deleted_at IS NULL`
-  );
+  // Set offset based on page and limit
+  let offset;
+  if (!isNaN(page) && limit !== "ALL") {
+    offset = (page - 1) * limit;
+  } else {
+    offset = 0;
+  }
+
+  const countQuery = `SELECT COUNT(*) FROM ${tableName} WHERE deleted_at IS NULL`;
+  const countResult = await pool.query(countQuery);
   const total = parseInt(countResult.rows[0].count, 10);
-  const totalPages = Math.ceil(total / limit);
+
+  let totalPages;
+  if (limit !== "ALL") {
+    totalPages = Math.ceil(total / limit);
+  } else {
+    totalPages = 1; // Only one page if no limit is set
+  }
 
   return {
-    page,
+    page: isNaN(page) ? 1 : page, // Default to 1 if page is not a number
     limit,
     offset,
     total,

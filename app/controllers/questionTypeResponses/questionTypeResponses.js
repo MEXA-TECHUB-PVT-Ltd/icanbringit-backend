@@ -3,7 +3,6 @@ const { pool } = require("../../config/db.config");
 exports.create = async (req, res) => {
   const { question_type_id, user_id, text, type } = req.body;
 
-  // Check for required fields
   if (!question_type_id || !user_id || !text || !type) {
     return res.status(400).json({
       status: false,
@@ -11,10 +10,10 @@ exports.create = async (req, res) => {
     });
   }
 
-  if (type !== "event" && type !== "food" && type !== "location") {
+  if (type !== "event_category" && type !== "food" && type !== "location") {
     return res.status(400).json({
       status: false,
-      message: "Type must be event or food or location",
+      message: "Type must be event_category or food or location",
     });
   }
 
@@ -40,7 +39,6 @@ exports.create = async (req, res) => {
       });
     }
 
-    // Insert response
     const query = `
       INSERT INTO question_type_responses (question_types_id, user_id, text, type)
       VALUES ($1, $2, $3, $4)
@@ -87,10 +85,10 @@ exports.update = async (req, res) => {
     });
   }
 
-  if (type !== "event" && type !== "food" && type !== "location") {
+  if (type !== "event_category" && type !== "food" && type !== "location") {
     return res.status(400).json({
       status: false,
-      message: "Type must be event or food or location",
+      message: "Type must be event_category or food or location",
     });
   }
 

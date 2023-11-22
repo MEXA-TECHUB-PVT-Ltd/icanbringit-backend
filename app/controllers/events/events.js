@@ -243,14 +243,16 @@ exports.get = async (req, res) => {
 };
 exports.getAll = async (req, res) => {
   const id = parseInt(req.query.id);
-  const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 10;
-  const offset = (page - 1) * limit;
+  const page = parseInt(req.query.page);
+  const limit = parseInt(req.query.limit);
+  const offset = page && limit ? (page - 1) * limit : 0;
 
   try {
     let query, countQuery;
+    let queryParams = [];
+
     if (id) {
-      // Combine conditions for excluding events from reported and blocked users
+      // Exclusion conditions
       const exclusionCondition = `
         WHERE e.user_id NOT IN (
           SELECT reported_user_id 
@@ -267,35 +269,34 @@ exports.getAll = async (req, res) => {
         )
       `;
 
+      queryParams.push(id);
       query = `
         SELECT e.* 
         FROM events e
         ${exclusionCondition}
-        ORDER BY e.id LIMIT $2 OFFSET $3;
+        ORDER BY e.id
       `;
       countQuery = `
         SELECT COUNT(*) FROM events e
         ${exclusionCondition};
       `;
     } else {
-      // If no ID is provided, fetch all events
-      query = `
-        SELECT * FROM events ORDER BY id LIMIT $1 OFFSET $2;
-      `;
-      countQuery = `
-        SELECT COUNT(*) FROM events;
-      `;
+      query = `SELECT * FROM events ORDER BY id`;
+      countQuery = `SELECT COUNT(*) FROM events`;
+    }
+
+    // Apply pagination only if both page and limit are valid
+    if (page && limit) {
+      query += ` LIMIT $${id ? 2 : 1} OFFSET $${id ? 3 : 2}`;
+      queryParams.push(limit, offset);
     }
 
     // Execute queries
-    const result = await pool.query(
-      query,
-      id ? [id, limit, offset] : [limit, offset]
-    );
+    const result = await pool.query(query, queryParams);
     const countResult = await pool.query(countQuery, id ? [id] : []);
 
     const totalItems = parseInt(countResult.rows[0].count);
-    const totalPages = Math.ceil(totalItems / limit);
+    const totalPages = limit ? Math.ceil(totalItems / limit) : 1;
 
     if (result.rowCount === 0) {
       return res
@@ -307,8 +308,8 @@ exports.getAll = async (req, res) => {
       message: "Event retrieved successfully",
       totalItems,
       totalPages,
-      currentPage: page,
-      itemsPerPage: limit,
+      currentPage: page || 1,
+      itemsPerPage: limit || totalItems,
       result: result.rows,
     });
   } catch (error) {
@@ -319,6 +320,7 @@ exports.getAll = async (req, res) => {
     });
   }
 };
+
 
 
 
