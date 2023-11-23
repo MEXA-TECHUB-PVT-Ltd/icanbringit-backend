@@ -530,7 +530,6 @@ exports.getUser = async (req, res) => {
 
 exports.getAllUsers = async (req, res) => {
   try {
-    // Retrieve or default pagination parameters
     let {
       page = 1,
       limit = "ALL",
@@ -539,32 +538,48 @@ exports.getAllUsers = async (req, res) => {
       totalPages,
     } = await getPaginatedResults(req, "users");
 
-    // Adjust the getPaginatedResults function or its calling pattern to handle 'ALL' limit
-
-    if (total === 0) {
-      return sendSuccessResponse(res, "No users found", {
-        users: [],
-        currentPage: page,
-        totalPages: 0,
-        totalUsers: total,
-      });
-    }
-
-    // Adjust the query based on whether a limit is set
     let userQuery;
     if (limit === "ALL") {
-      userQuery = await pool.query(
-        "SELECT * FROM users WHERE deleted_at IS NULL AND role = 'user' ORDER BY id"
-      );
+      userQuery = `
+        SELECT u.*, 
+               array_agg(
+                 json_build_object(
+                   'response_id', qtr.id, 
+                   'question_type_id', qtr.question_types_id, 
+                   'response_text', qtr.text, 
+                   'response_type', qtr.type
+                 )
+               ) AS responses
+        FROM users u
+        LEFT JOIN question_type_responses qtr ON u.id = qtr.user_id
+        WHERE u.deleted_at IS NULL AND u.role = 'user'
+        GROUP BY u.id
+        ORDER BY u.id;
+      `;
+      userQuery = await pool.query(userQuery);
     } else {
-      userQuery = await pool.query(
-        "SELECT * FROM users WHERE deleted_at IS NULL AND role = 'user' ORDER BY id LIMIT $1 OFFSET $2",
-        [limit, offset]
-      );
+      userQuery = `
+        SELECT u.*, 
+               array_agg(
+                 json_build_object(
+                   'response_id', qtr.id, 
+                   'question_type_id', qtr.question_types_id, 
+                   'response_text', qtr.text, 
+                   'response_type', qtr.type
+                 )
+               ) AS responses
+        FROM users u
+        LEFT JOIN question_type_responses qtr ON u.id = qtr.user_id
+        WHERE u.deleted_at IS NULL AND u.role = 'user'
+        GROUP BY u.id
+        ORDER BY u.id
+        LIMIT $1 OFFSET $2;
+      `;
+      userQuery = await pool.query(userQuery, [limit, offset]);
     }
 
     const users = userQuery.rows.map(
-      ({ password, otp, ...userWithoutPassword }) => userWithoutPassword
+      ({ password, otp, ...userWithResponses }) => userWithResponses
     );
 
     sendSuccessResponse(res, "Users retrieved successfully", {
@@ -572,6 +587,70 @@ exports.getAllUsers = async (req, res) => {
       totalPages: limit === "ALL" ? 1 : totalPages,
       totalUsers: total,
       result: users,
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+
+exports.getAllSubscribedUsers = async (req, res) => {
+  try {
+    // Check if limit and page are provided in the request
+    const page = parseInt(req.query.page);
+    const limit = parseInt(req.query.limit);
+    const offset = page && limit ? (page - 1) * limit : 0;
+    const isPaginationProvided = !isNaN(page) && !isNaN(limit);
+
+    let userQuery;
+    if (isPaginationProvided) {
+      // Apply LIMIT and OFFSET if pagination parameters are provided
+      userQuery = `
+        SELECT * FROM users 
+        WHERE deleted_at IS NULL AND role = 'user' AND payment_status = true
+        ORDER BY id
+        LIMIT $1 OFFSET $2;
+      `;
+      userQuery = await pool.query(userQuery, [limit, offset]);
+    } else {
+      // Fetch all subscribed users if pagination parameters are not provided
+      userQuery = `
+        SELECT * FROM users 
+        WHERE deleted_at IS NULL AND role = 'user' AND payment_status = true
+        ORDER BY id;
+      `;
+      userQuery = await pool.query(userQuery);
+    }
+
+    // Count total subscribed users
+    const countQuery = `
+      SELECT COUNT(*) FROM users 
+      WHERE deleted_at IS NULL AND role = 'user' AND payment_status = true;
+    `;
+    const countResult = await pool.query(countQuery);
+    const totalUsers = parseInt(countResult.rows[0].count, 10);
+    const totalPages = isPaginationProvided ? Math.ceil(totalUsers / limit) : 1;
+
+    if (userQuery.rowCount === 0) {
+      return res.status(404).json({
+        status: false,
+        message: "No subscribed users found.",
+      });
+    }
+
+    const users = userQuery.rows.map(
+      ({ password, otp, ...userWithoutSensitiveData }) =>
+        userWithoutSensitiveData
+    );
+
+    return res.status(200).json({
+      status: true,
+      message: "Subscribed users retrieved successfully",
+      currentPage: isPaginationProvided ? page : 1,
+      totalPages: totalPages,
+      totalUsers: totalUsers,
+      users: users,
     });
   } catch (error) {
     console.error(error);
@@ -879,26 +958,30 @@ exports.getUsersByCountry = async (req, res) => {
   }
 };
 
-exports.addByYear = async (req, res) => {
+exports.addByMonthAndYear = async (req, res) => {
   try {
     const query = `
-            SELECT 
-                EXTRACT(YEAR FROM created_at) AS year, 
-                COUNT(*) AS user_count 
-            FROM users WHERE role = 'user'
-            GROUP BY year 
-            ORDER BY year DESC;
-        `;
+      SELECT 
+        EXTRACT(YEAR FROM created_at) AS year, 
+        EXTRACT(MONTH FROM created_at) AS month, 
+        COUNT(*) AS user_count 
+      FROM users 
+      WHERE role = 'user'
+      GROUP BY year, month
+      ORDER BY year DESC, month DESC;
+    `;
 
     const result = await pool.query(query);
 
     if (result.rowCount === 0) {
-      return res.status(404).json({ message: "No users found." });
+      return res
+        .status(404)
+        .json({ status: false, message: "No users found." });
     }
 
     res.json({
       status: true,
-      message: "Users count by year retrieved successfully",
+      message: "Users count by month and year retrieved successfully",
       result: result.rows,
     });
   } catch (error) {
@@ -906,6 +989,7 @@ exports.addByYear = async (req, res) => {
     res.status(500).json({ status: false, message: "Internal server error" });
   }
 };
+
 
 exports.search = async (req, res) => {
   const { name } = req.params;

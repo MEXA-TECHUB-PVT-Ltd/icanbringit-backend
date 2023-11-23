@@ -105,11 +105,9 @@ exports.update = async (req, res) => {
     });
   }
 };
-
 exports.getAll = async (req, res) => {
   let { limit = 10, page = 1 } = req.query;
 
-  // Convert limit and page to integers and validate
   limit = parseInt(limit);
   page = parseInt(page);
   if (isNaN(limit) || isNaN(page) || limit <= 0 || page <= 0) {
@@ -122,9 +120,17 @@ exports.getAll = async (req, res) => {
   try {
     const offset = (page - 1) * limit;
 
+    // Updated query with JOIN and JSON function
     const query = `
-      SELECT * FROM feedback
-      ORDER BY created_at DESC
+      SELECT f.id, f.comment, f.created_at, f.updated_at,
+             json_build_object(
+               'id', u.id,
+               'name', u.full_name,
+               'email', u.email
+             ) as user
+      FROM feedback f
+      INNER JOIN users u ON f.user_id = u.id
+      ORDER BY f.created_at DESC
       LIMIT $1 OFFSET $2;
     `;
     const result = await pool.query(query, [limit, offset]);
@@ -159,6 +165,7 @@ exports.getAll = async (req, res) => {
     });
   }
 };
+
 
 exports.get = async (req, res) => {
   const { id } = req.params;

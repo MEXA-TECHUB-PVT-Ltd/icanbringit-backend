@@ -39,7 +39,7 @@ exports.getPaginatedResults = async (req, tableName) => {
     offset = 0;
   }
 
-  const countQuery = `SELECT COUNT(*) FROM ${tableName} WHERE deleted_at IS NULL`;
+  const countQuery = `SELECT COUNT(*) FROM ${tableName} WHERE role = 'user' AND deleted_at IS NULL`;
   const countResult = await pool.query(countQuery);
   const total = parseInt(countResult.rows[0].count, 10);
 
