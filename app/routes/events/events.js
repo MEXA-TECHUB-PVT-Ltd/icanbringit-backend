@@ -11,7 +11,7 @@ router.get("/get/:id/:user_id", controller.get);
 router.get("/getAllByUser/:user_id", controller.getAllByUser);
 router.get("/getAll", controller.getAll);
 router.get("/getAllUpComingByUser/:user_id", controller.getAllUpComingByUser);
-router.get("/getAllByCategory/:category", controller.getAllByCategory);
+router.get("/getAllByCategory/:category_id", controller.getAllByCategory);
 router.get("/search/:title", controller.search);
 router.get("/filterEvents", controller.filterEvents);
 router.get("/getAllEventsWithDetails", controller.getAllEventsWithDetails);

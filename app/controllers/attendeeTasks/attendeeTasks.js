@@ -160,9 +160,17 @@ exports.getAllEventAttendee = async (req, res) => {
   const offset = (page - 1) * limit;
 
   try {
+    // Add more columns from the users table as needed
+    const userColumns = [
+      "u.full_name",
+      "u.email",
+      "u.block_status",
+      "u.payment_status",
+    ];
+
     // Query to get attendees of a specific event
     const query = `
-      SELECT a.*, u.full_name, u.email
+      SELECT a.*, ${userColumns.join(", ")}
       FROM attendee a
       JOIN users u ON a.attendee_id = u.id
       WHERE a.event_id = $1
@@ -225,36 +233,43 @@ exports.search = async (req, res) => {
     }
 
     const conditions = searchWords.map((word, index) => {
-      return `(u.full_name ILIKE $${index + 1})`;
+      return `(u_filtered.full_name ILIKE $${index + 1})`;
     });
 
     const values = searchWords.map((word) => `%${word.toLowerCase()}%`);
     let query, offset;
 
+    const subQuery = `
+      SELECT id, email, signup_type, role, verify_email, full_name, 
+             gender, age, city, country, uploads_id, location, 
+             block_status, payment_status, total_events, total_attendee, 
+             deleted_at, google_access_token, facebook_access_token, 
+             apple_access_token, created_at, updated_at, report_status, 
+             is_deleted, deactivate, device_id
+      FROM users
+    `;
+
     if (page && limit) {
       limit = parseInt(limit);
       offset = (parseInt(page) - 1) * limit;
       query = `
-        SELECT u.*, a.event_id 
-        FROM users u
-        JOIN attendee a ON u.id = a.attendee_id
+        SELECT u_filtered.*, a.event_id 
+        FROM (${subQuery}) AS u_filtered
+        JOIN attendee a ON u_filtered.id = a.attendee_id
         WHERE (${conditions.join(" OR ")})
-        ORDER BY u.id DESC
+        ORDER BY u_filtered.id DESC
         LIMIT $${conditions.length + 1} OFFSET $${conditions.length + 2}
       `;
       values.push(limit, offset);
     } else {
       query = `
-        SELECT u.*, a.event_id 
-        FROM users u
-        JOIN attendee a ON u.id = a.attendee_id
+        SELECT u_filtered.*, a.event_id 
+        FROM (${subQuery}) AS u_filtered
+        JOIN attendee a ON u_filtered.id = a.attendee_id
         WHERE (${conditions.join(" OR ")})
-        ORDER BY u.id DESC
+        ORDER BY u_filtered.id DESC
       `;
     }
-
-    console.log("Executing query:", query);
-    console.log("With values:", values);
 
     const result = await pool.query(query, values);
 

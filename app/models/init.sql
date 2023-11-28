@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS events(
   id SERIAL PRIMARY KEY,
   user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   title TEXT,
-  category TEXT,
+  category_id INT REFERENCES question_types(id) ON DELETE CASCADE,
   cover_photo_id INT REFERENCES uploads(id) ON DELETE CASCADE,
   start_timestamp TIMESTAMP WITH TIME ZONE,
   -- Combined start date and time

@@ -10,10 +10,10 @@ exports.create = async (req, res) => {
       message: "Type, and text are required.",
     });
   }
-  if (type !== "event_category" && type !== "food") {
+  if (type !== "event_category" && type !== "food" && type !== "location") {
     return res.status(400).json({
       status: false,
-      message: "Type must be event_category and food",
+      message: "Type must be event_category, location and food",
     });
   }
 
@@ -59,10 +59,10 @@ exports.update = async (req, res) => {
     });
   }
 
-  if (type !== "event_category" && type !== "food") {
+  if (type !== "event_category" && type !== "food" && type !== "location") {
     return res.status(400).json({
       status: false,
-      message: "Type must be 'event_category' or 'food'",
+      message: "Type must be 'event_category', 'location' and 'food'",
     });
   }
 
@@ -130,22 +130,38 @@ exports.get= async (req, res) => {
 
 
 exports.getAll = async (req, res) => {
-  const { type } = req.params;
-  const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 10;
-  const offset = (page - 1) * limit;
+  let page = parseInt(req.query.page);
+  let limit = parseInt(req.query.limit);
+  const sortColumn = req.query.sortColumn || "id"; // Default to 'id' if not provided
+  const sortOrder = req.query.order === "desc" ? "DESC" : "ASC"; // Default sort order
 
   try {
-    const query =
-      "SELECT * FROM question_types WHERE type = $1 ORDER BY id LIMIT $2 OFFSET $3";
-    const countQuery = "SELECT COUNT(*) FROM question_types WHERE type = $1";
+    let query, countQuery, result, totalItems, totalPages;
 
-    // Execute queries
-    const result = await pool.query(query, [type, limit, offset]);
-    const countResult = await pool.query(countQuery, [type]);
+    if (page && limit) {
+      const offset = (page - 1) * limit;
+      query = `
+        SELECT * FROM question_types 
+        ORDER BY ${sortColumn} ${sortOrder} 
+        LIMIT $1 OFFSET $2`;
+      countQuery = "SELECT COUNT(*) FROM question_types";
 
-    const totalItems = parseInt(countResult.rows[0].count);
-    const totalPages = Math.ceil(totalItems / limit);
+      result = await pool.query(query, [limit, offset]);
+      const countResult = await pool.query(countQuery);
+
+      totalItems = parseInt(countResult.rows[0].count);
+      totalPages = Math.ceil(totalItems / limit);
+    } else {
+      query = `SELECT * FROM question_types ORDER BY ${sortColumn} ${sortOrder}`;
+      result = await pool.query(query);
+
+      totalItems = result.rowCount;
+      totalPages = 1;
+      page = 1;
+      limit = totalItems;
+    }
+
+    console.log("Query executed:", query); // Debugging
 
     return res.json({
       status: true,
@@ -164,6 +180,64 @@ exports.getAll = async (req, res) => {
     });
   }
 };
+
+exports.getAllByType = async (req, res) => {
+  const { type } = req.params;
+  let page = parseInt(req.query.page);
+  let limit = parseInt(req.query.limit);
+  const sortColumn = req.query.sortColumn;
+  const sortOrder = req.query.sortOrder === "desc" ? "DESC" : "ASC"; // Default sort order
+
+  try {
+    let query, countQuery, result, totalItems, totalPages;
+
+    if (page && limit) {
+      // Pagination is provided
+      const offset = (page - 1) * limit;
+      query = `
+        SELECT * FROM question_types 
+        WHERE type = $1 
+        ${sortColumn ? `ORDER BY ${sortColumn} ${sortOrder}` : ""} 
+        LIMIT $2 OFFSET $3`;
+      countQuery = "SELECT COUNT(*) FROM question_types WHERE type = $1";
+
+      // Execute queries
+      result = await pool.query(query, [type, limit, offset]);
+      const countResult = await pool.query(countQuery, [type]);
+
+      totalItems = parseInt(countResult.rows[0].count);
+      totalPages = Math.ceil(totalItems / limit);
+    } else {
+      // No pagination, fetch all
+      query = `SELECT * FROM question_types WHERE type = $1 ${
+        sortColumn ? `ORDER BY ${sortColumn} ${sortOrder}` : ""
+      }`;
+      result = await pool.query(query, [type]);
+
+      totalItems = result.rowCount;
+      totalPages = 1;
+      page = 1;
+      limit = totalItems;
+    }
+
+    return res.json({
+      status: true,
+      message: "Event types retrieved successfully",
+      totalItems,
+      totalPages,
+      currentPage: page,
+      itemsPerPage: limit,
+      result: result.rows,
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      status: false,
+      message: error.message,
+    });
+  }
+};
+
 
 
 

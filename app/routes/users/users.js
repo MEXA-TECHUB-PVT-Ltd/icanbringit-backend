@@ -18,6 +18,7 @@ router.get("/getUsersByCountry/:country", controller.getUsersByCountry);
 router.get("/addByMonthAndYear", controller.addByMonthAndYear);
 router.get("/getAll", controller.getAllUsers);
 router.get("/getAllSubscribedUsers", controller.getAllSubscribedUsers);
+router.get("/getAllBlockUsers", controller.getAllBlockUsers);
 router.get("/getRecentlyDeletedUsers", controller.getRecentlyDeletedUsers);
 router.delete("/delete/:id", controller.deleteUser);
 router.delete("/deleteAllUser", controller.deleteAllUser);
