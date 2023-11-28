@@ -4,7 +4,7 @@ exports.create = async (req, res) => {
   const {
     user_id,
     title,
-    category,
+    category_id,
     cover_photo_id,
     start_timestamp,
     end_timestamp,
@@ -40,7 +40,7 @@ exports.create = async (req, res) => {
     }
 
     const query = {
-      text: `INSERT INTO events (user_id, title, category, cover_photo_id, 
+      text: `INSERT INTO events (user_id, title, category_id, cover_photo_id, 
                      start_timestamp, end_timestamp, event_type, 
                      virtual_link, location, event_details, no_guests, privacy, 
                      suggested_items) 
@@ -49,7 +49,7 @@ exports.create = async (req, res) => {
       values: [
         user_id,
         title,
-        category,
+        category_id,
         cover_photo_id,
         start_timestamp, // UTC format
         end_timestamp, // UTC format
@@ -81,7 +81,7 @@ exports.update = async (req, res) => {
     event_id,
     user_id,
     title,
-    category,
+    category_id,
     cover_photo_id,
     start_timestamp,
     end_timestamp,
@@ -130,9 +130,9 @@ exports.update = async (req, res) => {
       fieldsToUpdate.push(`title = $${valueCount++}`);
       values.push(title);
     }
-    if (category) {
-      fieldsToUpdate.push(`category = $${valueCount++}`);
-      values.push(category);
+    if (category_id) {
+      fieldsToUpdate.push(`category_id = $${valueCount++}`);
+      values.push(category_id);
     }
     if (cover_photo_id) {
       fieldsToUpdate.push(`cover_photo_id = $${valueCount++}`);
@@ -209,14 +209,16 @@ exports.get = async (req, res) => {
   if (!id || !user_id) {
     return res.status(400).json({
       status: false,
-      message: "id and user_id is required.",
+      message: "id and user_id are required.",
     });
   }
 
   try {
     const query = `
-      SELECT * FROM events
-      WHERE id = $1 AND user_id = $2;
+      SELECT e.*, qt.text AS category_text, qt.options AS category_options
+      FROM events e
+      LEFT JOIN question_types qt ON e.category_id = qt.id
+      WHERE e.id = $1 AND e.user_id = $2;
     `;
 
     const result = await pool.query(query, [id, user_id]);
@@ -231,7 +233,7 @@ exports.get = async (req, res) => {
     return res.status(200).json({
       status: true,
       message: "Event retrieved successfully",
-      response: result.rows[0],
+      result: result.rows[0],
     });
   } catch (error) {
     console.error(error);
@@ -241,8 +243,9 @@ exports.get = async (req, res) => {
     });
   }
 };
+
 exports.getAll = async (req, res) => {
-  const id = parseInt(req.query.id);
+  const id = parseInt(req.query.user_id);
   const page = parseInt(req.query.page);
   const limit = parseInt(req.query.limit);
   const offset = page && limit ? (page - 1) * limit : 0;
@@ -271,8 +274,9 @@ exports.getAll = async (req, res) => {
 
       queryParams.push(id);
       query = `
-        SELECT e.* 
+        SELECT e.*, qt.text AS category_text, qt.options AS category_options
         FROM events e
+        LEFT JOIN question_types qt ON e.category_id = qt.id
         ${exclusionCondition}
         ORDER BY e.id
       `;
@@ -281,7 +285,12 @@ exports.getAll = async (req, res) => {
         ${exclusionCondition};
       `;
     } else {
-      query = `SELECT * FROM events ORDER BY id`;
+      query = `
+        SELECT e.*, qt.text AS category_text, qt.options AS category_options
+        FROM events e
+        LEFT JOIN question_types qt ON e.category_id = qt.id
+        ORDER BY e.id
+      `;
       countQuery = `SELECT COUNT(*) FROM events`;
     }
 
@@ -305,12 +314,12 @@ exports.getAll = async (req, res) => {
     }
     return res.json({
       status: true,
-      message: "Event retrieved successfully",
+      message: "Events retrieved successfully",
       totalItems,
       totalPages,
       currentPage: page || 1,
       itemsPerPage: limit || totalItems,
-      result: result.rows,
+      events: result.rows,
     });
   } catch (error) {
     console.error(error);
@@ -321,9 +330,6 @@ exports.getAll = async (req, res) => {
   }
 };
 
-
-
-
 exports.getAllByUser = async (req, res) => {
   const { user_id } = req.params;
   const page = parseInt(req.query.page) || 1;
@@ -331,9 +337,14 @@ exports.getAllByUser = async (req, res) => {
   const offset = (page - 1) * limit;
 
   try {
-    // Query to get events created by the specific user
+    // Query to get events created by the specific user with category details
     const query = `
-      SELECT * FROM events WHERE user_id = $1 ORDER BY id LIMIT $2 OFFSET $3;
+      SELECT e.*, qt.text AS category_text, qt.options AS category_options
+      FROM events e
+      LEFT JOIN question_types qt ON e.category_id = qt.id
+      WHERE e.user_id = $1
+      ORDER BY e.id
+      LIMIT $2 OFFSET $3;
     `;
 
     // Adjusted count query to match the user_id filter
@@ -357,7 +368,7 @@ exports.getAllByUser = async (req, res) => {
 
     return res.json({
       status: true,
-      message: "Event retrieved successfully",
+      message: "Events retrieved successfully",
       totalItems,
       totalPages,
       currentPage: page,
@@ -373,9 +384,8 @@ exports.getAllByUser = async (req, res) => {
   }
 };
 
-
 exports.getAllByCategory = async (req, res) => {
-  const { category } = req.params;
+  const { category_id } = req.params;
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
   const offset = (page - 1) * limit;
@@ -383,16 +393,16 @@ exports.getAllByCategory = async (req, res) => {
   try {
     // Query to get responses
     const query = `
-      SELECT * FROM events WHERE category = $1 ORDER BY id LIMIT $2 OFFSET $3;
+      SELECT * FROM events WHERE category_id = $1 ORDER BY id LIMIT $2 OFFSET $3;
     `;
 
     const countQuery = `
-      SELECT COUNT(*) FROM events WHERE category = $1;
+      SELECT COUNT(*) FROM events WHERE category_id = $1;
     `;
 
     // Execute queries
-    const result = await pool.query(query, [category, limit, offset]);
-    const countResult = await pool.query(countQuery, [category]);
+    const result = await pool.query(query, [category_id, limit, offset]);
+    const countResult = await pool.query(countQuery, [category_id]);
 
     const totalItems = parseInt(countResult.rows[0].count);
     const totalPages = Math.ceil(totalItems / limit);
@@ -553,99 +563,112 @@ exports.search = async (req, res) => {
     });
   }
 };
-
 exports.filterEvents = async (req, res) => {
   const {
     user_id,
     title,
-    category,
+    category_id,
     cover_photo_id,
     start_timestamp,
     end_timestamp,
     event_type,
     virtual_link,
-    location, // Handling as a text search for simplicity
+    location,
     event_details,
     no_guests,
     privacy,
-    suggested_items, // Handling as a single string for simplicity
+    suggested_items,
     page = 1,
     limit = 10,
   } = req.query;
   const offset = (page - 1) * limit;
 
   try {
-    let baseQuery = "FROM events WHERE 1 = 1";
+    let baseQuery =
+      "FROM events e LEFT JOIN question_types qt ON e.category_id = qt.id WHERE 1 = 1";
     const values = [];
     let valueCount = 1;
 
+    // Add filters based on provided query parameters
     if (user_id) {
-      baseQuery += ` AND user_id = $${valueCount++}`;
+      baseQuery += ` AND e.user_id = $${valueCount++}`;
       values.push(user_id);
     }
     if (title) {
-      baseQuery += ` AND title ILIKE $${valueCount++}`;
+      baseQuery += ` AND e.title ILIKE $${valueCount++}`;
       values.push(`%${title}%`);
     }
-    if (category) {
-      baseQuery += ` AND category = $${valueCount++}`;
-      values.push(category);
+    if (category_id) {
+      baseQuery += ` AND e.category_id = $${valueCount++}`;
+      values.push(category_id);
     }
     if (cover_photo_id) {
-      baseQuery += ` AND cover_photo_id = $${valueCount++}`;
+      baseQuery += ` AND e.cover_photo_id = $${valueCount++}`;
       values.push(cover_photo_id);
     }
     if (start_timestamp) {
-      baseQuery += ` AND start_timestamp >= $${valueCount++}`;
+      baseQuery += ` AND e.start_timestamp >= $${valueCount++}`;
       values.push(new Date(start_timestamp).toISOString());
     }
     if (end_timestamp) {
-      baseQuery += ` AND end_timestamp <= $${valueCount++}`;
+      baseQuery += ` AND e.end_timestamp <= $${valueCount++}`;
       values.push(new Date(end_timestamp).toISOString());
     }
     if (event_type) {
-      baseQuery += ` AND event_type = $${valueCount++}`;
+      baseQuery += ` AND e.event_type = $${valueCount++}`;
       values.push(event_type);
     }
     if (virtual_link) {
-      baseQuery += ` AND virtual_link = $${valueCount++}`;
+      baseQuery += ` AND e.virtual_link = $${valueCount++}`;
       values.push(virtual_link);
     }
     if (location) {
-      baseQuery += ` AND location::text ILIKE $${valueCount++}`; // example for text-based filtering
+      baseQuery += ` AND e.location::text ILIKE $${valueCount++}`;
       values.push(`%${location}%`);
     }
     if (event_details) {
-      baseQuery += ` AND event_details ILIKE $${valueCount++}`;
+      baseQuery += ` AND e.event_details ILIKE $${valueCount++}`;
       values.push(`%${event_details}%`);
     }
     if (no_guests) {
-      baseQuery += ` AND no_guests = $${valueCount++}`;
+      baseQuery += ` AND e.no_guests = $${valueCount++}`;
       values.push(no_guests);
     }
     if (privacy) {
-      baseQuery += ` AND privacy = $${valueCount++}`;
+      baseQuery += ` AND e.privacy = $${valueCount++}`;
       values.push(privacy);
     }
     if (suggested_items) {
-      baseQuery += ` AND $${valueCount++} = ANY(suggested_items)`;
+      baseQuery += ` AND $${valueCount++} = ANY(e.suggested_items)`;
       values.push(suggested_items);
     }
 
+    // Count query for pagination
     const countQuery = `SELECT COUNT(*) ${baseQuery}`;
     const countResult = await pool.query(countQuery, values);
     const totalCount = parseInt(countResult.rows[0].count, 10);
 
-    // Add LIMIT and OFFSET to the main query
-    let query = `SELECT * ${baseQuery} LIMIT $${valueCount++} OFFSET $${valueCount}`;
+    // Main query for fetching data
+    let query = `SELECT e.*, qt.text AS category_text, qt.options AS category_options ${baseQuery} ORDER BY e.id LIMIT $${valueCount++} OFFSET $${valueCount}`;
     values.push(limit, offset);
 
     const result = await pool.query(query, values);
+
+    // Check if no results found
+    if (result.rowCount === 0) {
+      return res.status(404).json({
+        status: false,
+        message: "No events found",
+      });
+    }
+
+    // Return the response
     res.status(200).json({
       status: true,
       totalItems: totalCount,
       totalPages: Math.ceil(totalCount / limit),
       currentPage: parseInt(page, 10),
+      itemsPerPage: limit,
       result: result.rows,
     });
   } catch (error) {
@@ -665,10 +688,11 @@ exports.getAllEventsWithDetails = async (req, res) => {
     const countResult = await pool.query("SELECT COUNT(*) FROM events");
     const total = parseInt(countResult.rows[0].count, 10);
 
-    // Query to get paginated events
+    // Query to get paginated events with category details
     const paginatedEventsQuery = `
       SELECT 
-        events.*, 
+        events.*,
+        question_types.text AS category,
         json_agg(
           json_build_object(
             'task', attendee_tasks.text, 
@@ -681,7 +705,8 @@ exports.getAllEventsWithDetails = async (req, res) => {
         ) as attendee_details
       FROM events
       LEFT JOIN attendee_tasks ON events.id = attendee_tasks.event_id
-      GROUP BY events.id
+      LEFT JOIN question_types ON events.category_id = question_types.id
+      GROUP BY events.id, question_types.text
       ORDER BY events.created_at DESC
       LIMIT $1 OFFSET $2;
     `;
@@ -894,10 +919,13 @@ exports.getAllUpComingByUser = async (req, res) => {
     const userColumns = ["id", "email", "full_name", "city", "country"];
 
     const query = `
-      SELECT es.*, e.*, ${userColumns.map((col) => "u." + col).join(", ")}
+      SELECT es.*, e.*, qt.text AS category, ${userColumns
+        .map((col) => "u." + col)
+        .join(", ")}
       FROM events_status es
       JOIN events e ON es.event_id = e.id
       JOIN users u ON es.user_id = u.id
+      LEFT JOIN question_types qt ON e.category_id = qt.id
       WHERE es.user_id = $1 AND es.status = 'UpComing'
       ORDER BY es.id
       LIMIT $2 OFFSET $3;
@@ -928,7 +956,7 @@ exports.getAllUpComingByUser = async (req, res) => {
       totalPages,
       currentPage: page,
       itemsPerPage: limit,
-      events: result.rows,
+      result: result.rows,
     });
   } catch (error) {
     console.error(error);

@@ -1,19 +1,19 @@
 const { pool } = require("../../config/db.config");
 
 exports.create = async (req, res) => {
-  const { question_type_id, user_id, text, type } = req.body;
+  const { question_type_id, user_id, type } = req.body;
 
-  if (!question_type_id || !user_id || !text || !type) {
+  if (!question_type_id || !user_id || !type) {
     return res.status(400).json({
       status: false,
-      message: "question_type_id, user_id, Text, and Type are required.",
+      message: "question_type_id, user_id, and type are required.",
     });
   }
 
   if (type !== "event_category" && type !== "food" && type !== "location") {
     return res.status(400).json({
       status: false,
-      message: "Type must be event_category or food or location",
+      message: "Type must be 'event_category', 'food', or 'location'",
     });
   }
 
@@ -29,6 +29,8 @@ exports.create = async (req, res) => {
         message: "Question not found",
       });
     }
+
+    // Check if user exists
     const userExists = await pool.query("SELECT id FROM users WHERE id = $1", [
       user_id,
     ]);
@@ -39,30 +41,47 @@ exports.create = async (req, res) => {
       });
     }
 
-    const query = `
-      INSERT INTO question_type_responses (question_types_id, user_id, text, type)
-      VALUES ($1, $2, $3, $4)
-      RETURNING *;
+    // Insert the response
+    const insertQuery = `
+      INSERT INTO question_type_responses (question_types_id, user_id, type)
+      VALUES ($1, $2, $3)
+      RETURNING id;
     `;
-
-    const result = await pool.query(query, [
+    const insertResult = await pool.query(insertQuery, [
       question_type_id,
       user_id,
-      text,
       type,
     ]);
 
-    if (result.rowCount === 0) {
+    if (insertResult.rowCount === 0) {
       return res.status(400).json({
         status: false,
         message: "Error in saving response",
       });
     }
 
+    // Retrieve the question and the response
+    const responseId = insertResult.rows[0].id;
+    const retrieveQuery = `
+      SELECT qt.id as question_id, qt.text as question_text, qt.options as question_options, qt.type as question_type,
+             qtr.id as response_id, qtr.user_id, qtr.type as response_type
+      FROM question_types qt
+      JOIN question_type_responses qtr ON qt.id = qtr.question_types_id
+      WHERE qtr.id = $1;
+    `;
+    const retrieveResult = await pool.query(retrieveQuery, [responseId]);
+
+    if (retrieveResult.rowCount === 0) {
+      return res.status(400).json({
+        status: false,
+        message: "Error in retrieving response",
+      });
+    }
+
     return res.status(201).json({
       status: true,
-      message: "Response saved successfully",
-      response: result.rows[0],
+      message: "Response saved and retrieved successfully",
+      questionResponse: retrieveResult.rows[0],
     });
   } catch (error) {
     console.error(error);
@@ -73,26 +92,37 @@ exports.create = async (req, res) => {
   }
 };
 
+
 exports.update = async (req, res) => {
-  const { response_id, question_type_id, user_id, text, type } = req.body;
+  const { response_id, question_type_id, user_id, type } = req.body;
 
   // Check for required fields
-  if (!response_id || !question_type_id || !user_id || !text || !type) {
+  if (!response_id || !question_type_id || !user_id || !type) {
     return res.status(400).json({
       status: false,
-      message:
-        "response_id, question_type_id, user_id, Text, and Type are required.",
+      message: "response_id, question_type_id, user_id, and type are required.",
     });
   }
 
   if (type !== "event_category" && type !== "food" && type !== "location") {
     return res.status(400).json({
       status: false,
-      message: "Type must be event_category or food or location",
+      message: "Type must be 'event_category', 'food', or 'location'",
     });
   }
 
   try {
+    // Check if response exists
+    const questionsExists = await pool.query(
+      "SELECT id FROM question_types WHERE id = $1",
+      [question_type_id]
+    );
+    if (questionsExists.rowCount === 0) {
+      return res.status(404).json({
+        status: false,
+        message: "Question not found",
+      });
+    }
     // Check if response exists
     const responseExists = await pool.query(
       "SELECT id FROM question_type_responses WHERE id = $1",
@@ -106,32 +136,47 @@ exports.update = async (req, res) => {
     }
 
     // Update response
-    const query = `
+    const updateQuery = `
       UPDATE question_type_responses
-      SET question_types_id = $1, user_id = $2, text = $3, updated_at = NOW()
-      WHERE id = $4 AND type = $5
-      RETURNING *;
+      SET question_types_id = $1, user_id = $2, type = $4, updated_at = NOW()
+      WHERE id = $3
+      RETURNING id;
     `;
-
-    const result = await pool.query(query, [
+    const updateResult = await pool.query(updateQuery, [
       question_type_id,
       user_id,
-      text,
       response_id,
       type,
     ]);
 
-    if (result.rowCount === 0) {
+    if (updateResult.rowCount === 0) {
       return res.status(404).json({
         status: false,
         message: "No changes made to the response",
       });
     }
 
+    // Retrieve the updated response and question
+    const retrieveQuery = `
+      SELECT qt.id as question_id, qt.text as question_text, qt.options as question_options, qt.type as question_type,
+             qtr.id as response_id, qtr.user_id, qtr.type as response_type
+      FROM question_types qt
+      JOIN question_type_responses qtr ON qt.id = qtr.question_types_id
+      WHERE qtr.id = $1;
+    `;
+    const retrieveResult = await pool.query(retrieveQuery, [response_id]);
+
+    if (retrieveResult.rowCount === 0) {
+      return res.status(400).json({
+        status: false,
+        message: "Error in retrieving updated response",
+      });
+    }
+
     return res.status(200).json({
       status: true,
       message: "Response updated successfully",
-      response: result.rows[0],
+      questionResponse: retrieveResult.rows[0],
     });
   } catch (error) {
     console.error(error);
@@ -144,23 +189,25 @@ exports.update = async (req, res) => {
 
 exports.get = async (req, res) => {
   const { id, type } = req.params;
-  const { user_id } = req.query;
 
   // Check if parameters are provided
-  if (!id || !type || !user_id) {
+  if (!id || !type ) {
     return res.status(400).json({
       status: false,
-      message: "ID, Type, and User ID are required.",
+      message: "ID, Type,  are required.",
     });
   }
 
   try {
     const query = `
-      SELECT * FROM question_type_responses
-      WHERE id = $1 AND type = $2 AND user_id = $3;
+      SELECT qtr.id as response_id, qtr.user_id, qtr.type as response_type,
+             qt.id as question_id, qt.text as question_text, qt.options as question_options, qt.type as question_type
+      FROM question_type_responses qtr
+      JOIN question_types qt ON qtr.question_types_id = qt.id
+      WHERE qtr.id = $1 AND qtr.type = $2;
     `;
 
-    const result = await pool.query(query, [id, type, user_id]);
+    const result = await pool.query(query, [id, type]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({
@@ -171,8 +218,8 @@ exports.get = async (req, res) => {
 
     return res.status(200).json({
       status: true,
-      message: "Response retrieved successfully",
-      response: result.rows[0],
+      message: "Response and associated question retrieved successfully",
+      result: result.rows[0],
     });
   } catch (error) {
     console.error(error);
@@ -182,6 +229,7 @@ exports.get = async (req, res) => {
     });
   }
 };
+
 exports.getAll = async (req, res) => {
   const { type } = req.params;
   const { user_id } = req.query;
@@ -201,24 +249,25 @@ exports.getAll = async (req, res) => {
       user_id,
     ]);
     if (userExists.rowCount === 0) {
-      return res.status(404).json({
-        status: false,
-        message: "User not found",
-      });
+      return res.status(404).json({ status: false, message: "User not found" });
     }
 
-    // Query to get responses
+    // Query to get responses with join
     const query = `
-      SELECT * FROM question_type_responses
-      WHERE type = $1 AND user_id = $2
-      ORDER BY id
+      SELECT qtr.*, qt.text, qt.options
+      FROM question_type_responses qtr
+      JOIN question_types qt ON qtr.question_types_id = qt.id
+      WHERE qtr.type = $1 AND qtr.user_id = $2
+      ORDER BY qtr.id
       LIMIT $3 OFFSET $4;
     `;
 
-    // Count query for pagination
+    // Count query for pagination with join
     const countQuery = `
-      SELECT COUNT(*) FROM question_type_responses
-      WHERE type = $1 AND user_id = $2;
+      SELECT COUNT(*) 
+      FROM question_type_responses qtr
+      JOIN question_types qt ON qtr.question_types_id = qt.id
+      WHERE qtr.type = $1 AND qtr.user_id = $2;
     `;
 
     // Execute queries
@@ -239,12 +288,10 @@ exports.getAll = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    return res.status(500).json({
-      status: false,
-      message: error.message,
-    });
+    return res.status(500).json({ status: false, message: error.message });
   }
 };
+
 
 exports.delete = async (req, res) => {
   const { type, id } = req.params;

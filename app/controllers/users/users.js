@@ -16,16 +16,17 @@ exports.create = async (req, res) => {
     email,
     password,
     signup_type,
+    device_id,
     role,
     google_access_token,
     apple_access_token,
     facebook_access_token,
   } = req.body;
 
-  if (!signup_type) {
+  if (!signup_type || !device_id) {
     return res.status(400).json({
       status: false,
-      message: "Signup type is required",
+      message: "Signup type and device_id is required",
     });
   }
 
@@ -79,8 +80,15 @@ exports.create = async (req, res) => {
         // Insert email user logic
         const hashedPassword = await bcrypt.hash(password, 8);
         insertQuery =
-          "INSERT INTO users (email, password, role, signup_type, otp) VALUES ($1, $2, $3, $4, $5) RETURNING *";
-        insertValues = [email, hashedPassword, userRole, signup_type, otp];
+          "INSERT INTO users (email, password, role, signup_type, otp, device_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *";
+        insertValues = [
+          email,
+          hashedPassword,
+          userRole,
+          signup_type,
+          otp,
+          device_id,
+        ];
         const emailSent = await sendEmail(
           email,
           "Sign Up Verification",
@@ -135,8 +143,8 @@ exports.create = async (req, res) => {
           });
         }
         insertQuery =
-          "INSERT INTO users (email, google_access_token, role, signup_type) VALUES ($1, $2, $3, $4) RETURNING *";
-        insertValues = [email, google_access_token, userRole, signup_type];
+          "INSERT INTO users (email, google_access_token, role, signup_type, device_id) VALUES ($1, $2, $3, $4, $5) RETURNING *";
+        insertValues = [email, google_access_token, userRole, signup_type, device_id];
         break;
       case "facebook":
         if (!facebook_access_token) {
@@ -146,8 +154,8 @@ exports.create = async (req, res) => {
           });
         }
         insertQuery =
-          "INSERT INTO users (email, facebook_access_token, role, signup_type) VALUES ($1, $2, $3, $4) RETURNING *";
-        insertValues = [email, facebook_access_token, userRole, signup_type];
+          "INSERT INTO users (email, facebook_access_token, role, signup_type, device_id) VALUES ($1, $2, $3, $4, $5) RETURNING *";
+        insertValues = [email, facebook_access_token, userRole, signup_type, device_id];
         break;
       case "apple":
         if (!apple_access_token) {
@@ -400,16 +408,20 @@ exports.signIn = async (req, res) => {
   const {
     email,
     password,
-    signup_type,
+    signin_type,
     google_access_token,
     apple_access_token,
     facebook_access_token,
+    device_id,
   } = req.body;
 
-  if (!email || !signup_type) {
+  if (!email || !signin_type || !device_id) {
     return res
       .status(400)
-      .json({ status: false, message: "Email and signup_type is required" });
+      .json({
+        status: false,
+        message: "Email, device_id and signin_type is required",
+      });
   }
 
   try {
@@ -417,6 +429,7 @@ exports.signIn = async (req, res) => {
       "SELECT * FROM users WHERE email = $1",
       [email]
     );
+
     if (checkUserExists.rowCount === 0) {
       return res.status(409).json({
         status: false,
@@ -427,7 +440,7 @@ exports.signIn = async (req, res) => {
     const user = checkUserExists.rows[0];
 
     // Handle password-based sign-in
-    if (signup_type === "email") {
+    if (signin_type === "email") {
       if (!password) {
         return res.status(400).json({
           status: false,
@@ -443,9 +456,9 @@ exports.signIn = async (req, res) => {
       }
     }
     // Handle OAuth-based sign-in
-    else if (["google", "facebook", "apple"].includes(signup_type)) {
+    else if (["google", "facebook", "apple"].includes(signin_type)) {
       let tokenMatches = true;
-      switch (signup_type) {
+      switch (signin_type) {
         case "google":
           tokenMatches = google_access_token
             ? user.google_access_token === google_access_token
@@ -534,6 +547,8 @@ exports.getAllUsers = async (req, res) => {
       page = 1,
       limit = "ALL",
       offset = 0,
+      sortColumn = "id", // Default sorting column
+      sortOrder = "asc", // Default sorting order
       total,
       totalPages,
     } = await getPaginatedResults(req, "users");
@@ -541,40 +556,40 @@ exports.getAllUsers = async (req, res) => {
     let userQuery;
     if (limit === "ALL") {
       userQuery = `
-        SELECT u.*, 
-               array_agg(
-                 json_build_object(
-                   'response_id', qtr.id, 
-                   'question_type_id', qtr.question_types_id, 
-                   'response_text', qtr.text, 
-                   'response_type', qtr.type
-                 )
-               ) AS responses
-        FROM users u
-        LEFT JOIN question_type_responses qtr ON u.id = qtr.user_id
-        WHERE u.deleted_at IS NULL AND u.role = 'user'
-        GROUP BY u.id
-        ORDER BY u.id;
-      `;
+    SELECT u.*, 
+           array_agg(
+             json_build_object(
+               'response_id', qtr.id, 
+               'question_type_id', qtr.question_types_id, 
+               'response_text', qtr.text, 
+               'response_type', qtr.type
+             )
+           ) AS responses
+    FROM users u
+    LEFT JOIN question_type_responses qtr ON u.id = qtr.user_id
+    WHERE u.deleted_at IS NULL AND u.role = 'user'
+    GROUP BY u.id
+    ORDER BY ${sortColumn} ${sortOrder === "asc" ? "ASC" : "DESC"};
+  `;
       userQuery = await pool.query(userQuery);
     } else {
       userQuery = `
-        SELECT u.*, 
-               array_agg(
-                 json_build_object(
-                   'response_id', qtr.id, 
-                   'question_type_id', qtr.question_types_id, 
-                   'response_text', qtr.text, 
-                   'response_type', qtr.type
-                 )
-               ) AS responses
-        FROM users u
-        LEFT JOIN question_type_responses qtr ON u.id = qtr.user_id
-        WHERE u.deleted_at IS NULL AND u.role = 'user'
-        GROUP BY u.id
-        ORDER BY u.id
-        LIMIT $1 OFFSET $2;
-      `;
+    SELECT u.*, 
+           array_agg(
+             json_build_object(
+               'response_id', qtr.id, 
+               'question_type_id', qtr.question_types_id, 
+               'response_text', qtr.text, 
+               'response_type', qtr.type
+             )
+           ) AS responses
+    FROM users u
+    LEFT JOIN question_type_responses qtr ON u.id = qtr.user_id
+    WHERE u.deleted_at IS NULL AND u.role = 'user'
+    GROUP BY u.id
+    ORDER BY ${sortColumn} ${sortOrder === "asc" ? "ASC" : "DESC"}
+    LIMIT $1 OFFSET $2;
+  `;
       userQuery = await pool.query(userQuery, [limit, offset]);
     }
 
@@ -593,7 +608,6 @@ exports.getAllUsers = async (req, res) => {
     return res.status(500).json({ status: false, message: error.message });
   }
 };
-
 
 exports.getAllSubscribedUsers = async (req, res) => {
   try {
@@ -647,6 +661,69 @@ exports.getAllSubscribedUsers = async (req, res) => {
     return res.status(200).json({
       status: true,
       message: "Subscribed users retrieved successfully",
+      currentPage: isPaginationProvided ? page : 1,
+      totalPages: totalPages,
+      totalUsers: totalUsers,
+      users: users,
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+exports.getAllBlockUsers = async (req, res) => {
+  try {
+    // Check if limit and page are provided in the request
+    const page = parseInt(req.query.page);
+    const limit = parseInt(req.query.limit);
+    const offset = page && limit ? (page - 1) * limit : 0;
+    const isPaginationProvided = !isNaN(page) && !isNaN(limit);
+
+    let userQuery;
+    if (isPaginationProvided) {
+      // Apply LIMIT and OFFSET if pagination parameters are provided
+      userQuery = `
+        SELECT * FROM users 
+        WHERE deleted_at IS NULL AND role = 'user' AND block_status = true
+        ORDER BY id
+        LIMIT $1 OFFSET $2;
+      `;
+      userQuery = await pool.query(userQuery, [limit, offset]);
+    } else {
+      // Fetch all subscribed users if pagination parameters are not provided
+      userQuery = `
+        SELECT * FROM users 
+        WHERE deleted_at IS NULL AND role = 'user' AND block_status = true
+        ORDER BY id;
+      `;
+      userQuery = await pool.query(userQuery);
+    }
+
+    // Count total subscribed users
+    const countQuery = `
+      SELECT COUNT(*) FROM users 
+      WHERE deleted_at IS NULL AND role = 'user' AND block_status = true;
+    `;
+    const countResult = await pool.query(countQuery);
+    const totalUsers = parseInt(countResult.rows[0].count, 10);
+    const totalPages = isPaginationProvided ? Math.ceil(totalUsers / limit) : 1;
+
+    if (userQuery.rowCount === 0) {
+      return res.status(404).json({
+        status: false,
+        message: "No Block users found.",
+      });
+    }
+
+    const users = userQuery.rows.map(
+      ({ password, otp, ...userWithoutSensitiveData }) =>
+        userWithoutSensitiveData
+    );
+
+    return res.status(200).json({
+      status: true,
+      message: "Block users retrieved successfully",
       currentPage: isPaginationProvided ? page : 1,
       totalPages: totalPages,
       totalUsers: totalUsers,
@@ -760,7 +837,9 @@ exports.deleteUser = async (req, res) => {
 
 exports.deleteAllUser = async (req, res) => {
   try {
-    const result = await pool.query("DELETE FROM  users WHERE role = 'user' RETURNING *");
+    const result = await pool.query(
+      "DELETE FROM  users WHERE role = 'user' RETURNING *"
+    );
     if (result.rowCount === 0) {
       return res.status(400).json({
         status: false,
@@ -989,7 +1068,6 @@ exports.addByMonthAndYear = async (req, res) => {
     res.status(500).json({ status: false, message: "Internal server error" });
   }
 };
-
 
 exports.search = async (req, res) => {
   const { name } = req.params;
