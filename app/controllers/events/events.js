@@ -28,6 +28,16 @@ exports.create = async (req, res) => {
         message: "User not found",
       });
     }
+    const categoryExits = await pool.query(
+      "SELECT id FROM question_types WHERE id = $1",
+      [category_id]
+    );
+    if (categoryExits.rowCount === 0) {
+      return res.status(404).json({
+        status: false,
+        message: "Category not found",
+      });
+    }
     const uploadCover = await pool.query(
       "SELECT 1 FROM uploads WHERE id = $1",
       [cover_photo_id]

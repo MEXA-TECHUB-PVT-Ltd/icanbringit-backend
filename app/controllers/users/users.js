@@ -390,7 +390,7 @@ exports.updatePassword = async (req, res) => {
     const hash = await bcrypt.hash(new_password, 8);
 
     const query = `UPDATE users SET password = $1 WHERE email = $2 RETURNING id, email, role, signup_type, created_at, updated_at`;
-    await pool.query(query, [hash, email]);
+    const result = await pool.query(query, [hash, email]);
     res.json({
       status: true,
       message: "password updated Successfully!",
@@ -516,7 +516,10 @@ exports.getUser = async (req, res) => {
 
   try {
     const userQuery = await pool.query(
-      "SELECT * FROM users WHERE id = $1 AND role = 'user'",
+      `SELECT users.*, uploads.file_name, uploads.file_type 
+      FROM users 
+      LEFT JOIN uploads ON users.uploads_id = uploads.id 
+      WHERE users.id = $1 AND users.role = 'user' AND users.deleted_at IS NULL`,
       [id]
     );
 
@@ -527,19 +530,21 @@ exports.getUser = async (req, res) => {
       });
     }
 
-    delete userQuery.rows[0].password;
-    delete userQuery.rows[0].otp;
+    const userData = userQuery.rows[0];
+    delete userData.password;
+    delete userData.otp;
 
     return res.status(200).json({
       status: true,
       message: "User retrieved successfully",
-      result: userQuery.rows[0],
+      result: userData,
     });
   } catch (error) {
     console.log(error);
     return res.status(500).json({ status: false, message: error.message });
   }
 };
+
 
 exports.getAllUsers = async (req, res) => {
   try {
@@ -556,40 +561,42 @@ exports.getAllUsers = async (req, res) => {
     let userQuery;
     if (limit === "ALL") {
       userQuery = `
-    SELECT u.*, 
-           array_agg(
-             json_build_object(
-               'response_id', qtr.id, 
-               'question_type_id', qtr.question_types_id, 
-               'response_text', qtr.text, 
-               'response_type', qtr.type
-             )
-           ) AS responses
-    FROM users u
-    LEFT JOIN question_type_responses qtr ON u.id = qtr.user_id
-    WHERE u.deleted_at IS NULL AND u.role = 'user'
-    GROUP BY u.id
-    ORDER BY ${sortColumn} ${sortOrder === "asc" ? "ASC" : "DESC"};
-  `;
+        SELECT u.*, 
+               array_agg(
+                 json_build_object(
+                   'response_id', qtr.id, 
+                   'question_type_id', qtr.question_types_id, 
+                   'response_type', qtr.type
+                 )
+               ) AS responses,
+               up.file_name, up.file_type
+        FROM users u
+        LEFT JOIN question_type_responses qtr ON u.id = qtr.user_id
+        LEFT JOIN uploads up ON u.uploads_id = up.id
+        WHERE u.deleted_at IS NULL AND u.role = 'user'
+        GROUP BY u.id, up.id
+        ORDER BY ${sortColumn} ${sortOrder === "asc" ? "ASC" : "DESC"};
+      `;
       userQuery = await pool.query(userQuery);
     } else {
       userQuery = `
-    SELECT u.*, 
-           array_agg(
-             json_build_object(
-               'response_id', qtr.id, 
-               'question_type_id', qtr.question_types_id, 
-               'response_text', qtr.text, 
-               'response_type', qtr.type
-             )
-           ) AS responses
-    FROM users u
-    LEFT JOIN question_type_responses qtr ON u.id = qtr.user_id
-    WHERE u.deleted_at IS NULL AND u.role = 'user'
-    GROUP BY u.id
-    ORDER BY ${sortColumn} ${sortOrder === "asc" ? "ASC" : "DESC"}
-    LIMIT $1 OFFSET $2;
-  `;
+        SELECT u.*, 
+               array_agg(
+                 json_build_object(
+                   'response_id', qtr.id, 
+                   'question_type_id', qtr.question_types_id, 
+                   'response_type', qtr.type
+                 )
+               ) AS responses,
+               up.file_name, up.file_type
+        FROM users u
+        LEFT JOIN question_type_responses qtr ON u.id = qtr.user_id
+        LEFT JOIN uploads up ON u.uploads_id = up.id
+        WHERE u.deleted_at IS NULL AND u.role = 'user'
+        GROUP BY u.id, up.id
+        ORDER BY ${sortColumn} ${sortOrder === "asc" ? "ASC" : "DESC"}
+        LIMIT $1 OFFSET $2;
+      `;
       userQuery = await pool.query(userQuery, [limit, offset]);
     }
 
@@ -609,6 +616,7 @@ exports.getAllUsers = async (req, res) => {
   }
 };
 
+
 exports.getAllSubscribedUsers = async (req, res) => {
   try {
     // Check if limit and page are provided in the request
@@ -621,18 +629,22 @@ exports.getAllSubscribedUsers = async (req, res) => {
     if (isPaginationProvided) {
       // Apply LIMIT and OFFSET if pagination parameters are provided
       userQuery = `
-        SELECT * FROM users 
-        WHERE deleted_at IS NULL AND role = 'user' AND payment_status = true
-        ORDER BY id
+        SELECT u.*, up.file_name, up.file_type 
+        FROM users u
+        LEFT JOIN uploads up ON u.uploads_id = up.id
+        WHERE u.deleted_at IS NULL AND u.role = 'user' AND u.payment_status = true
+        ORDER BY u.id
         LIMIT $1 OFFSET $2;
       `;
       userQuery = await pool.query(userQuery, [limit, offset]);
     } else {
       // Fetch all subscribed users if pagination parameters are not provided
       userQuery = `
-        SELECT * FROM users 
-        WHERE deleted_at IS NULL AND role = 'user' AND payment_status = true
-        ORDER BY id;
+        SELECT u.*, up.file_name, up.file_type 
+        FROM users u
+        LEFT JOIN uploads up ON u.uploads_id = up.id
+        WHERE u.deleted_at IS NULL AND u.role = 'user' AND u.payment_status = true
+        ORDER BY u.id;
       `;
       userQuery = await pool.query(userQuery);
     }
@@ -684,23 +696,27 @@ exports.getAllBlockUsers = async (req, res) => {
     if (isPaginationProvided) {
       // Apply LIMIT and OFFSET if pagination parameters are provided
       userQuery = `
-        SELECT * FROM users 
-        WHERE deleted_at IS NULL AND role = 'user' AND block_status = true
-        ORDER BY id
+        SELECT u.*, up.file_name, up.file_type 
+        FROM users u
+        LEFT JOIN uploads up ON u.uploads_id = up.id
+        WHERE u.deleted_at IS NULL AND u.role = 'user' AND u.block_status = true
+        ORDER BY u.id
         LIMIT $1 OFFSET $2;
       `;
       userQuery = await pool.query(userQuery, [limit, offset]);
     } else {
-      // Fetch all subscribed users if pagination parameters are not provided
+      // Fetch all blocked users if pagination parameters are not provided
       userQuery = `
-        SELECT * FROM users 
-        WHERE deleted_at IS NULL AND role = 'user' AND block_status = true
-        ORDER BY id;
+        SELECT u.*, up.file_name, up.file_type 
+        FROM users u
+        LEFT JOIN uploads up ON u.uploads_id = up.id
+        WHERE u.deleted_at IS NULL AND u.role = 'user' AND u.block_status = true
+        ORDER BY u.id;
       `;
       userQuery = await pool.query(userQuery);
     }
 
-    // Count total subscribed users
+    // Count total blocked users
     const countQuery = `
       SELECT COUNT(*) FROM users 
       WHERE deleted_at IS NULL AND role = 'user' AND block_status = true;
@@ -712,7 +728,7 @@ exports.getAllBlockUsers = async (req, res) => {
     if (userQuery.rowCount === 0) {
       return res.status(404).json({
         status: false,
-        message: "No Block users found.",
+        message: "No blocked users found.",
       });
     }
 
@@ -723,7 +739,7 @@ exports.getAllBlockUsers = async (req, res) => {
 
     return res.status(200).json({
       status: true,
-      message: "Block users retrieved successfully",
+      message: "Blocked users retrieved successfully",
       currentPage: isPaginationProvided ? page : 1,
       totalPages: totalPages,
       totalUsers: totalUsers,
@@ -741,16 +757,18 @@ exports.getRecentlyDeletedUsers = async (req, res) => {
 
     const deletedUsersQuery = `
       SELECT
-        *,
-        EXTRACT(DAY FROM (${currentTimestamp} - deleted_at)) AS days_since_deleted,
-        90 - EXTRACT(DAY FROM (${currentTimestamp} - deleted_at)) AS remaining_days
+        u.*,
+        up.file_name, up.file_type,
+        EXTRACT(DAY FROM (${currentTimestamp} - u.deleted_at)) AS days_since_deleted,
+        90 - EXTRACT(DAY FROM (${currentTimestamp} - u.deleted_at)) AS remaining_days
       FROM
-        users
+        users u
+      LEFT JOIN uploads up ON u.uploads_id = up.id
       WHERE
-        deleted_at IS NOT NULL
-        AND deleted_at > (${currentTimestamp} - INTERVAL '90 days') AND role = 'user'
+        u.deleted_at IS NOT NULL
+        AND u.deleted_at > (${currentTimestamp} - INTERVAL '90 days') AND u.role = 'user'
       ORDER BY
-        deleted_at DESC
+        u.deleted_at DESC
     `;
 
     const { rows } = await pool.query(deletedUsersQuery);
@@ -787,6 +805,7 @@ exports.getRecentlyDeletedUsers = async (req, res) => {
     });
   }
 };
+
 
 exports.deleteUser = async (req, res) => {
   const userId = parseInt(req.params.id, 10);

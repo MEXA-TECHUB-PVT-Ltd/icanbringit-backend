@@ -105,6 +105,7 @@ exports.update = async (req, res) => {
     });
   }
 };
+
 exports.getAll = async (req, res) => {
   let { limit = 10, page = 1 } = req.query;
 
@@ -126,10 +127,12 @@ exports.getAll = async (req, res) => {
              json_build_object(
                'id', u.id,
                'name', u.full_name,
-               'email', u.email
+               'email', u.email,
+               'upload', up.file_name
              ) as user
       FROM feedback f
       INNER JOIN users u ON f.user_id = u.id
+      LEFT JOIN uploads up ON u.uploads_id = up.id
       ORDER BY f.created_at DESC
       LIMIT $1 OFFSET $2;
     `;
@@ -173,25 +176,38 @@ exports.get = async (req, res) => {
   if (!id) {
     return res.status(400).json({
       status: false,
-      message: "User ID is required.",
+      message: "Feedback ID is required.",
     });
   }
 
   try {
-    const query = `SELECT * FROM feedback WHERE id = $1 ORDER BY created_at DESC;`;
+    const query = `
+      SELECT f.id, f.comment, f.created_at, f.updated_at,
+             json_build_object(
+               'id', u.id,
+               'name', u.full_name,
+               'email', u.email,
+               'upload', up.file_name
+             ) as user
+      FROM feedback f
+      INNER JOIN users u ON f.user_id = u.id
+      LEFT JOIN uploads up ON u.uploads_id = up.id
+      WHERE f.id = $1
+      ORDER BY f.created_at DESC;
+    `;
     const result = await pool.query(query, [id]);
 
     if (result.rowCount < 1) {
       return res.status(404).json({
         status: false,
-        message: "No feedback found for the provided user.",
+        message: "No feedback found for the provided ID.",
       });
     }
 
     return res.status(200).json({
       status: true,
       message: "Feedback retrieved successfully.",
-      result: result.rows,
+      result: result.rows[0], // Assuming only one row is expected
     });
   } catch (error) {
     return res.status(500).json({
@@ -200,6 +216,7 @@ exports.get = async (req, res) => {
     });
   }
 };
+
 
 exports.delete = async (req, res) => {
   const { id } = req.params;
