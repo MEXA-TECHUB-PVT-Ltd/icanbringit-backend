@@ -1,4 +1,5 @@
 const { pool } = require("../../config/db.config");
+const moment = require("moment");
 
 exports.create = async (req, res) => {
   const {
@@ -617,12 +618,18 @@ exports.filterEvents = async (req, res) => {
       values.push(cover_photo_id);
     }
     if (start_timestamp) {
-      baseQuery += ` AND e.start_timestamp >= $${valueCount++}`;
-      values.push(new Date(start_timestamp).toISOString());
+      const formattedStartTimestamp = moment
+        .utc(start_timestamp)
+        .format("YYYY-MM-DD");
+      baseQuery += ` AND DATE(e.start_timestamp) = $${valueCount++}`;
+      values.push(formattedStartTimestamp);
     }
     if (end_timestamp) {
-      baseQuery += ` AND e.end_timestamp <= $${valueCount++}`;
-      values.push(new Date(end_timestamp).toISOString());
+      const formattedEndTimestamp = moment
+        .utc(end_timestamp)
+        .format("YYYY-MM-DD");
+      baseQuery += ` AND DATE(e.end_timestamp) = $${valueCount++}`;
+      values.push(formattedEndTimestamp);
     }
     if (event_type) {
       baseQuery += ` AND e.event_type = $${valueCount++}`;
@@ -790,7 +797,7 @@ exports.joinEventsWithTypes = async (req, res) => {
       type === "JOIN_PUBLIC_EVENT"
         ? "Pending"
         : type === "ACCEPT_INVITATION"
-        ? "Accepted"
+        ? "Accepted" : type === "REJECT_INVITATION" ? "Rejected"
         : "Pending";
 
     const newAttendee = await pool.query(insertAttendeeQuery, [
@@ -828,12 +835,12 @@ exports.joinEventsWithTypes = async (req, res) => {
 };
 
 exports.updateJoinEventAttendeeTypeAndStatus = async (req, res) => {
-  const { attendee_id, new_type } = req.body;
+  const { id, new_type } = req.body;
 
-  if (!attendee_id || !new_type) {
+  if (!id || !new_type) {
     return res.status(400).json({
       status: false,
-      message: "attendee_id and new_type are required",
+      message: "id and new_type are required",
     });
   }
 
@@ -853,7 +860,7 @@ exports.updateJoinEventAttendeeTypeAndStatus = async (req, res) => {
   try {
     const attendeeExists = await pool.query(
       "SELECT * FROM attendee WHERE id = $1",
-      [attendee_id]
+      [id]
     );
     if (attendeeExists.rowCount === 0) {
       return res
@@ -870,6 +877,8 @@ exports.updateJoinEventAttendeeTypeAndStatus = async (req, res) => {
         ? "Pending"
         : new_type === "ACCEPT_INVITATION"
         ? "Accepted"
+        : new_type === "REJECT_INVITATION"
+        ? "Rejected"
         : "Pending";
 
     const updateAttendeeQuery = `
@@ -882,7 +891,7 @@ exports.updateJoinEventAttendeeTypeAndStatus = async (req, res) => {
       new_type,
       status,
       accepted,
-      attendee_id,
+      id,
     ]);
 
     const user_id = result.rows[0].attendee_id;
