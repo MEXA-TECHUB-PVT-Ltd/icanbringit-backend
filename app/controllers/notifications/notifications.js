@@ -54,32 +54,48 @@ exports.createNotification = async (req, res) => {
 
     if (result.rowCount === 1) {
       const query = `
-        SELECT
-          n.id AS notification_id,
-          n.title,
-          n.content,
-          n.is_read,
-          n.created_at AS notification_created_at,
-          t.name AS notification_type_name,
-          u.id AS sender_id,
-          u.full_name AS sender_full_name,
-          r.id AS receiver_id,
-          r.full_name AS receiver_full_name 
-         
-        FROM notification n
-        JOIN users u ON n.sender_id = u.id
-        JOIN users r ON n.receiver_id = r.id
-        JOIN notification_type t ON n.type = t.id
-        WHERE n.id=$1;`;
+SELECT
+  n.id AS notification_id,
+  n.title,
+  n.content,
+  n.is_read,
+  n.created_at AS notification_created_at,
+  t.name AS notification_type_name,
+  u.id AS sender_id,
+  u.full_name AS sender_full_name,
+  su.file_name AS sender_upload_file_name,
+  r.id AS receiver_id,
+  r.full_name AS receiver_full_name,
+  ru.file_name AS receiver_upload_file_name
+FROM notification n
+JOIN users u ON n.sender_id = u.id
+LEFT JOIN uploads su ON u.uploads_id = su.id
+JOIN users r ON n.receiver_id = r.id
+LEFT JOIN uploads ru ON r.uploads_id = ru.id
+JOIN notification_type t ON n.type = t.id
+WHERE n.id = $1
+  AND u.deleted_at IS NULL  -- Exclude notifications from deleted sender
+  AND r.deleted_at IS NULL; -- Exclude notifications to deleted receiver
+
+`;
 
       const notifications = await pool.query(query, [result.rows[0].id]);
+      if (notifications.rowCount === 0) {
+        return res
+          .status(400)
+          .json({
+            statusCode: 400,
+            message:
+              "Notification not created, make sure sender and receiver users are exists",
+          });
+      }
       return res.status(201).json({
         statusCode: 201,
         message: "Notification created successfully",
         result: notifications.rows[0],
       });
     }
-    res
+    return res
       .status(400)
       .json({ statusCode: 400, message: "Notification not created" });
   } catch (error) {
@@ -143,16 +159,25 @@ exports.updateNotification = async (req, res) => {
         JOIN users u ON n.sender_id = u.id
         JOIN users r ON n.receiver_id = r.id
         JOIN notification_type t ON n.type = t.id
-        WHERE n.id=$1;`;
+        WHERE n.id=$1
+        AND u.deleted_at IS NULL  -- Exclude notifications from deleted sender
+        AND r.deleted_at IS NULL; -- Exclude notifications to deleted receiver;`;
 
       const notifications = await pool.query(query, [notification_id]);
+      if (notifications.rowCount === 0) {
+        return res.status(400).json({
+          statusCode: 400,
+          message:
+            "Notification not created, make sure sender and receiver users are exists",
+        });
+      }
       return res.status(200).json({
         statusCode: 200,
         message: "Notification updated successfully",
         result: notifications.rows[0],
       });
     }
-    res
+    return res
       .status(400)
       .json({ statusCode: 400, message: "Notification not updated" });
   } catch (error) {
@@ -421,7 +446,8 @@ exports.deleteAllNotificationsByUser = async (req, res) => {
     }
 
     // Delete all notifications for the user
-    const delQuery = "DELETE FROM notification WHERE receiver_id=$1 RETURNING *";
+    const delQuery =
+      "DELETE FROM notification WHERE receiver_id=$1 RETURNING *";
     const result = await pool.query(delQuery, [id]);
 
     res.status(200).json({
@@ -481,5 +507,3 @@ exports.readNotification = async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 };
-
-

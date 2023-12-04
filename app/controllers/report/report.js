@@ -181,7 +181,14 @@ exports.getAll = async (req, res) => {
                json_build_object(
                  'id', reported.id, 
                  'name', reported.full_name, 
-                 'email', reported.email
+                 'email', reported.email,
+                 'block_status', reported.block_status
+                 'block_status', reported.block_status,
+                  'gender', reported.gender,
+                 'age', reported.age,
+                 'city', reported.city,
+                 'country', reported.country,
+                 'location', reported.location
                ) as reported_user
         FROM report r
         INNER JOIN users creator ON r.report_creator_id = creator.id
@@ -199,7 +206,13 @@ exports.getAll = async (req, res) => {
                json_build_object(
                  'id', reported.id, 
                  'name', reported.full_name, 
-                 'email', reported.email
+                 'email', reported.email,
+                 'block_status', reported.block_status,
+                  'gender', reported.gender,
+                 'age', reported.age,
+                 'city', reported.city,
+                 'country', reported.country,
+                 'location', reported.location
                ) as reported_user
         FROM report r
         INNER JOIN users creator ON r.report_creator_id = creator.id
@@ -260,7 +273,7 @@ exports.getAllByUser = async (req, res) => {
                  'updated_at', r.updated_at
                ),
                'reportedUser', json_build_object(
-                 'id', reported.id, 'name', reported.full_name, 'email', reported.email
+                 'id', reported.id, 'name', reported.full_name, 'email', reported.email, 'block_status', reported.block_status
                )
              ) as report_data
       FROM report r

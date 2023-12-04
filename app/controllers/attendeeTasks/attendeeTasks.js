@@ -12,11 +12,11 @@ exports.createTasks = async (req, res) => {
   } = req.body;
 
   // Check for required fields
-  if (!event_id || !user_id || !start_timestamp || !end_timestamp || !type) {
+  if (!event_id || !user_id || !type) {
     return res.status(400).json({
       status: false,
       message:
-        "event_id, user_id, start_timestamp, end_timestamp, type are required.",
+        "event_id, user_id,  type are required.",
     });
   }
 
@@ -48,10 +48,11 @@ exports.createTasks = async (req, res) => {
     let queryValues;
 
     if (type === "task") {
-      if (!text) {
+      if (!text || !start_timestamp || !end_timestamp ) {
         return res.status(400).json({
           status: false,
-          message: "text required for type 'task'",
+          message:
+            "text and start_timestamp, end_timestamp, required for type 'task'",
         });
       }
       queryText = `
@@ -152,6 +153,56 @@ exports.updateStatus = async (req, res) => {
   }
 };
 
+exports.getAssignedTasks = async (req, res) => {
+  const { user_id } = req.params;
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  const offset = (page - 1) * limit;
+
+  try {
+    // Query to fetch tasks assigned to a specific user
+    const taskQuery = `
+      SELECT at.*
+      FROM attendee_tasks at
+      WHERE at.user_id = $1
+      ORDER BY at.id DESC
+      LIMIT $2 OFFSET $3;
+    `;
+
+    const countQuery = `
+      SELECT COUNT(*) FROM attendee_tasks WHERE user_id = $1;
+    `;
+
+    // Execute queries
+    const result = await pool.query(taskQuery, [user_id, limit, offset]);
+    const countResult = await pool.query(countQuery, [user_id]);
+
+    const totalItems = parseInt(countResult.rows[0].count);
+    const totalPages = Math.ceil(totalItems / limit);
+
+    if (result.rowCount === 0) {
+      return res
+        .status(404)
+        .json({ status: false, message: "No tasks found for this user" });
+    }
+
+    return res.json({
+      status: true,
+      message: "Tasks retrieved successfully",
+      totalItems,
+      totalPages,
+      currentPage: page,
+      itemsPerPage: limit,
+      tasks: result.rows,
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      status: false,
+      message: error.message,
+    });
+  }
+};
 
 exports.getAllEventAttendee = async (req, res) => {
   const { event_id } = req.params;
@@ -164,22 +215,25 @@ exports.getAllEventAttendee = async (req, res) => {
     const userColumns = [
       "u.full_name",
       "u.email",
+      "u.gender",
+      "u.age",
       "u.block_status",
       "u.payment_status",
     ];
 
     // Query to get attendees of a specific event
     const query = `
-      SELECT a.*, ${userColumns.join(", ")}
-      FROM attendee a
-      JOIN users u ON a.attendee_id = u.id
-      WHERE a.event_id = $1
-      ORDER BY a.id
-      LIMIT $2 OFFSET $3;
-    `;
+  SELECT a.*, ${userColumns.join(", ")}, up.file_name
+  FROM attendee a
+  JOIN users u ON a.attendee_id = u.id
+  LEFT JOIN uploads up ON u.uploads_id = up.id
+  WHERE a.event_id = $1 AND accepted = 'Accepted'
+  ORDER BY a.id
+  LIMIT $2 OFFSET $3;
+`;
 
     const countQuery = `
-      SELECT COUNT(*) FROM attendee WHERE event_id = $1;
+      SELECT COUNT(*) FROM attendee WHERE event_id = $1 AND accepted = 'Accepted';
     `;
 
     // Execute queries
