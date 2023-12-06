@@ -144,7 +144,13 @@ exports.create = async (req, res) => {
         }
         insertQuery =
           "INSERT INTO users (email, google_access_token, role, signup_type, device_id) VALUES ($1, $2, $3, $4, $5) RETURNING *";
-        insertValues = [email, google_access_token, userRole, signup_type, device_id];
+        insertValues = [
+          email,
+          google_access_token,
+          userRole,
+          signup_type,
+          device_id,
+        ];
         break;
       case "facebook":
         if (!facebook_access_token) {
@@ -155,7 +161,13 @@ exports.create = async (req, res) => {
         }
         insertQuery =
           "INSERT INTO users (email, facebook_access_token, role, signup_type, device_id) VALUES ($1, $2, $3, $4, $5) RETURNING *";
-        insertValues = [email, facebook_access_token, userRole, signup_type, device_id];
+        insertValues = [
+          email,
+          facebook_access_token,
+          userRole,
+          signup_type,
+          device_id,
+        ];
         break;
       case "apple":
         if (!apple_access_token) {
@@ -209,7 +221,7 @@ exports.create = async (req, res) => {
 
 // verify code for both email and forgot password
 exports.verify_otp = async (req, res) => {
-  const { email, otp } = req.body;
+  const { email, otp, role } = req.body;
 
   if (!email || !otp) {
     return res
@@ -217,10 +229,12 @@ exports.verify_otp = async (req, res) => {
       .json({ status: false, message: "email and otp are required" });
   }
 
+  const defaultRole = role ? role : "user";
+
   try {
     const checkUserExists = await pool.query(
-      "SELECT 1 FROM users WHERE email = $1",
-      [email]
+      "SELECT 1 FROM users WHERE email = $1 AND role = $2",
+      [email, defaultRole]
     );
     if (checkUserExists.rowCount === 0) {
       return res.status(409).json({
@@ -253,14 +267,15 @@ exports.verify_otp = async (req, res) => {
 };
 
 exports.forgotPassword = async (req, res) => {
-  const { email } = req.body;
+  const { email, role } = req.body;
   if (!email) {
     return res.status(404).json({ message: "Email is required!" });
   }
+  const defaultRole = role ? role : "user";
   try {
     const checkUserExists = await pool.query(
-      "SELECT * FROM users WHERE email = $1",
-      [email]
+      "SELECT * FROM users WHERE email = $1 AND role = $2",
+      [email, defaultRole]
     );
     if (checkUserExists.rowCount === 0) {
       return res.status(409).json({
@@ -287,7 +302,7 @@ exports.forgotPassword = async (req, res) => {
 };
 
 exports.resetPassword = async (req, res) => {
-  const { email, new_password } = req.body;
+  const { email, new_password, role } = req.body;
   try {
     if (!email || !new_password) {
       return res.status(401).json({
@@ -295,8 +310,10 @@ exports.resetPassword = async (req, res) => {
         message: "email and new_password are required",
       });
     }
-    const findUserQuery = `SELECT * FROM users WHERE email = $1`;
-    const findUser = await pool.query(findUserQuery, [email]);
+    const defaultRole = role ? role : "user";
+
+    const findUserQuery = `SELECT * FROM users WHERE email = $1 AND role = $2`;
+    const findUser = await pool.query(findUserQuery, [email, defaultRole]);
     if (findUser.rowCount < 1) {
       return res.status(401).json({
         status: false,
@@ -357,7 +374,7 @@ exports.updateDeactivateStatus = async (req, res) => {
 };
 
 exports.updatePassword = async (req, res) => {
-  const { email, old_password, new_password } = req.body;
+  const { email, old_password, new_password, role } = req.body;
   try {
     if (!email || !old_password || !new_password) {
       return res.status(401).json({
@@ -365,9 +382,11 @@ exports.updatePassword = async (req, res) => {
         message: "email, old_password and new_password are required",
       });
     }
+    const defaultRole = role ? role : "user";
+
     const checkUserExists = await pool.query(
-      "SELECT * FROM users WHERE email = $1",
-      [email]
+      "SELECT * FROM users WHERE email = $1 AND role = $2",
+      [email, defaultRole]
     );
     if (checkUserExists.rowCount === 0) {
       return res.status(409).json({
@@ -413,21 +432,21 @@ exports.signIn = async (req, res) => {
     apple_access_token,
     facebook_access_token,
     device_id,
+    role,
   } = req.body;
 
   if (!email || !signin_type || !device_id) {
-    return res
-      .status(400)
-      .json({
-        status: false,
-        message: "Email, device_id and signin_type is required",
-      });
+    return res.status(400).json({
+      status: false,
+      message: "Email, device_id and signin_type is required",
+    });
   }
+  const defaultRole = role ? role : "user";
 
   try {
     const checkUserExists = await pool.query(
-      "SELECT * FROM users WHERE email = $1",
-      [email]
+      "SELECT * FROM users WHERE email = $1 AND role = $2",
+      [email, defaultRole]
     );
 
     if (checkUserExists.rowCount === 0) {
@@ -545,7 +564,6 @@ exports.getUser = async (req, res) => {
   }
 };
 
-
 exports.getAllUsers = async (req, res) => {
   try {
     let {
@@ -615,7 +633,6 @@ exports.getAllUsers = async (req, res) => {
     return res.status(500).json({ status: false, message: error.message });
   }
 };
-
 
 exports.getAllSubscribedUsers = async (req, res) => {
   try {
@@ -806,7 +823,6 @@ exports.getRecentlyDeletedUsers = async (req, res) => {
   }
 };
 
-
 exports.deleteUser = async (req, res) => {
   const userId = parseInt(req.params.id, 10);
 
@@ -913,12 +929,11 @@ exports.updateProfile = async (req, res) => {
       });
     }
     // Check if the upload image exists
-    const uploadImage = await pool.query(
-      "SELECT * FROM uploads WHERE id = $1",
-      [uploads_id]
-    );
+    const uploadImage =
+      uploads_id &&
+      (await pool.query("SELECT * FROM uploads WHERE id = $1", [uploads_id]));
 
-    if (uploadImage.rowCount === 0) {
+    if (uploads_id && uploadImage.rowCount === 0) {
       return res.status(404).json({
         status: false,
         message: "Upload Image not found",
