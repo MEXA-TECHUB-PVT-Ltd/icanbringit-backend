@@ -5,7 +5,7 @@ exports.create = async (req, res) => {
   const {
     user_id,
     title,
-    category_id,
+    event_category_id,
     cover_photo_id,
     start_timestamp,
     end_timestamp,
@@ -31,7 +31,7 @@ exports.create = async (req, res) => {
     }
     const categoryExits = await pool.query(
       "SELECT id FROM question_types WHERE id = $1",
-      [category_id]
+      [event_category_id]
     );
     if (categoryExits.rowCount === 0) {
       return res.status(404).json({
@@ -60,7 +60,7 @@ exports.create = async (req, res) => {
       values: [
         user_id,
         title,
-        category_id,
+        event_category_id,
         cover_photo_id,
         start_timestamp, // UTC format
         end_timestamp, // UTC format
@@ -92,7 +92,7 @@ exports.update = async (req, res) => {
     event_id,
     user_id,
     title,
-    category_id,
+    event_category_id,
     cover_photo_id,
     start_timestamp,
     end_timestamp,
@@ -143,7 +143,7 @@ exports.update = async (req, res) => {
     }
     if (category_id) {
       fieldsToUpdate.push(`category_id = $${valueCount++}`);
-      values.push(category_id);
+      values.push(event_category_id);
     }
     if (cover_photo_id) {
       fieldsToUpdate.push(`cover_photo_id = $${valueCount++}`);
