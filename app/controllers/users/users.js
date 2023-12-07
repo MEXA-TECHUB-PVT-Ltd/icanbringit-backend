@@ -239,7 +239,7 @@ exports.verify_otp = async (req, res) => {
     if (checkUserExists.rowCount === 0) {
       return res.status(409).json({
         status: false,
-        message: "User not found",
+        message: `${defaultRole} not found`,
       });
     }
 
@@ -278,7 +278,7 @@ exports.forgotPassword = async (req, res) => {
       [email, defaultRole]
     );
     if (checkUserExists.rowCount === 0) {
-      return res.status(409).json({
+      return res.status(409).json({ 
         status: false,
         message: "Invalid email address!",
       });
@@ -928,31 +928,70 @@ exports.updateProfile = async (req, res) => {
         message: "User not found",
       });
     }
-    // Check if the upload image exists
-    const uploadImage =
-      uploads_id &&
-      (await pool.query("SELECT * FROM uploads WHERE id = $1", [uploads_id]));
 
-    if (uploads_id && uploadImage.rowCount === 0) {
-      return res.status(404).json({
+    // Check if the upload image exists
+    if (uploads_id) {
+      const uploadImage = await pool.query(
+        "SELECT * FROM uploads WHERE id = $1",
+        [uploads_id]
+      );
+      if (uploadImage.rowCount === 0) {
+        return res.status(404).json({
+          status: false,
+          message: "Upload Image not found",
+        });
+      }
+    }
+
+    // Building the update query dynamically
+    const fieldsToUpdate = [];
+    const values = [];
+    let queryIndex = 1;
+
+    if (full_name !== undefined) {
+      fieldsToUpdate.push(`full_name = $${queryIndex++}`);
+      values.push(full_name);
+    }
+    if (gender !== undefined) {
+      fieldsToUpdate.push(`gender = $${queryIndex++}`);
+      values.push(gender);
+    }
+    if (age !== undefined) {
+      fieldsToUpdate.push(`age = $${queryIndex++}`);
+      values.push(age);
+    }
+    if (city !== undefined) {
+      fieldsToUpdate.push(`city = $${queryIndex++}`);
+      values.push(city);
+    }
+    if (country !== undefined) {
+      fieldsToUpdate.push(`country = $${queryIndex++}`);
+      values.push(country);
+    }
+    if (uploads_id !== undefined) {
+      fieldsToUpdate.push(`uploads_id = $${queryIndex++}`);
+      values.push(uploads_id);
+    }
+    if (location !== undefined) {
+      fieldsToUpdate.push(`location = $${queryIndex++}`);
+      values.push(location);
+    }
+    // Repeat for other fields (age, city, country, uploads_id, location)
+
+    if (fieldsToUpdate.length === 0) {
+      return res.status(400).json({
         status: false,
-        message: "Upload Image not found",
+        message: "No update information provided",
       });
     }
 
-    const updateQuery = `UPDATE users SET full_name = $1, gender = $2, age = $3, city = $4, country = $5, uploads_id = $6, location = $7  WHERE id = $8 RETURNING *`;
+    const updateQuery = `UPDATE users SET ${fieldsToUpdate.join(
+      ", "
+    )} WHERE id = $${queryIndex} RETURNING *`;
+    values.push(user_id);
 
     // Perform the update
-    const result = await pool.query(updateQuery, [
-      full_name,
-      gender,
-      age,
-      city,
-      country,
-      uploads_id,
-      location,
-      user_id,
-    ]);
+    const result = await pool.query(updateQuery, values);
 
     if (result.rowCount === 0) {
       return res
@@ -965,7 +1004,7 @@ exports.updateProfile = async (req, res) => {
 
     return res.json({
       status: true,
-      message: "Bio updated successfully",
+      message: "Profile updated successfully",
       result: result.rows[0],
     });
   } catch (error) {
@@ -976,6 +1015,7 @@ exports.updateProfile = async (req, res) => {
     });
   }
 };
+
 
 exports.updateBlockStatus = async (req, res) => {
   const { user_id, block_status } = req.body;
