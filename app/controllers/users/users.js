@@ -89,12 +89,14 @@ exports.create = async (req, res) => {
           otp,
           device_id,
         ];
-        const emailSent = await sendEmail(
-          email,
-          "Sign Up Verification",
-          `Thanks for signing up. Your code to verify is: ${otp}`
-        );
         // Render the EJS template to a string
+        const signUpTemplatePath = path.join(
+          __dirname,
+          "..",
+          "..",
+          "views",
+          "signup.ejs"
+        );
         const emailTemplatePath = path.join(
           __dirname,
           "..",
@@ -134,6 +136,29 @@ exports.create = async (req, res) => {
             }
           }
         );
+        ejs.renderFile(signUpTemplatePath, async (err, htmlContent) => {
+          if (err) {
+            console.log(err); // Handle error appropriately
+            return res.status(500).json({
+              status: false,
+              message: "Error rendering email template",
+            });
+          } else {
+            // Use the rendered HTML content for the email
+            const emailSent = await sendEmail(
+              email,
+              "Sign Up Verification",
+              htmlContent
+            );
+
+            if (!emailSent.success) {
+              return res.status(500).json({
+                status: false,
+                message: emailSent.message,
+              });
+            }
+          }
+        });
         break;
       case "google":
         if (!google_access_token) {
@@ -191,7 +216,6 @@ exports.create = async (req, res) => {
     userId = newUser.rows[0].id;
 
     delete newUser.rows[0].password;
-    delete newUser.rows[0].otp;
 
     const response = {
       status: true,
@@ -205,7 +229,7 @@ exports.create = async (req, res) => {
 
     response.result.token = token;
 
-    res.status(201).json({
+    return res.status(201).json({
       status: true,
       message: "Users created successfully",
       result: response,
@@ -221,7 +245,7 @@ exports.create = async (req, res) => {
 
 // verify code for both email and forgot password
 exports.verify_otp = async (req, res) => {
-  const { email, otp, role } = req.body;
+  const { email, otp, role, type } = req.body;
 
   if (!email || !otp) {
     return res
@@ -278,7 +302,7 @@ exports.forgotPassword = async (req, res) => {
       [email, defaultRole]
     );
     if (checkUserExists.rowCount === 0) {
-      return res.status(409).json({ 
+      return res.status(409).json({
         status: false,
         message: "Invalid email address!",
       });
@@ -1015,7 +1039,6 @@ exports.updateProfile = async (req, res) => {
     });
   }
 };
-
 
 exports.updateBlockStatus = async (req, res) => {
   const { user_id, block_status } = req.body;

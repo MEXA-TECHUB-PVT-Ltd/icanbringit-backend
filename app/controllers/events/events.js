@@ -50,36 +50,55 @@ exports.create = async (req, res) => {
       });
     }
 
-    const query = {
-      text: `INSERT INTO events (user_id, title, category_id, cover_photo_id, 
-                     start_timestamp, end_timestamp, event_type, 
-                     virtual_link, location, event_details, no_guests, privacy, 
-                     suggested_items) 
-                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) 
-                     RETURNING *`,
-      values: [
-        user_id,
-        title,
-        event_category_id,
-        cover_photo_id,
-        start_timestamp, // UTC format
-        end_timestamp, // UTC format
-        event_type,
-        virtual_link,
-        location,
-        event_details,
-        no_guests,
-        privacy,
-        suggested_items,
-      ],
-    };
+    const insertQuery = `INSERT INTO events (user_id, title, category_id, cover_photo_id, 
+                       start_timestamp, end_timestamp, event_type, 
+                       virtual_link, location, event_details, no_guests, privacy, 
+                       suggested_items) 
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) 
+                       RETURNING id`;
+    const eventResult = await pool.query(insertQuery, [
+      user_id,
+      title,
+      event_category_id,
+      cover_photo_id,
+      start_timestamp,
+      end_timestamp,
+      event_type,
+      virtual_link,
+      location,
+      event_details,
+      no_guests,
+      privacy,
+      suggested_items,
+    ]);
 
-    const result = await pool.query(query);
+    if (eventResult.rowCount === 0) {
+      return res
+        .status(400)
+        .json({ status: false, message: "Event creation failed" });
+    }
+
+    const eventId = eventResult.rows[0].id;
+
+    // Fetch the event with cover image details using JOIN
+    const fetchEventQuery = `
+      SELECT 
+        events.*, 
+        json_build_object(
+          'id', uploads.id,
+          'file_name', uploads.file_name,
+          'file_type', uploads.file_type
+        ) AS cover_image_details
+      FROM events
+      LEFT JOIN uploads ON events.cover_photo_id = uploads.id
+      WHERE events.id = $1`;
+
+    const fetchEventResult = await pool.query(fetchEventQuery, [eventId]);
 
     res.status(201).json({
       status: true,
       message: "Event created successfully",
-      result: result.rows[0],
+      result: fetchEventResult.rows[0],
     });
   } catch (error) {
     console.error(error);
@@ -92,7 +111,7 @@ exports.update = async (req, res) => {
     event_id,
     user_id,
     title,
-    event_category_id,
+    category_id,
     cover_photo_id,
     start_timestamp,
     end_timestamp,
@@ -143,7 +162,7 @@ exports.update = async (req, res) => {
     }
     if (category_id) {
       fieldsToUpdate.push(`category_id = $${valueCount++}`);
-      values.push(event_category_id);
+      values.push(category_id);
     }
     if (cover_photo_id) {
       fieldsToUpdate.push(`cover_photo_id = $${valueCount++}`);
@@ -198,14 +217,25 @@ exports.update = async (req, res) => {
 
     // Execute the query
     await pool.query(query, values);
-    const result = await pool.query("SELECT * FROM events WHERE id = $1", [
-      event_id,
-    ]);
+
+    const fetchEventQuery = `
+      SELECT 
+        events.*, 
+        json_build_object(
+          'id', uploads.id,
+          'file_name', uploads.file_name,
+          'file_type', uploads.file_type
+        ) AS cover_image_details
+      FROM events
+      LEFT JOIN uploads ON events.cover_photo_id = uploads.id
+      WHERE events.id = $1`;
+
+    const fetchEventResult = await pool.query(fetchEventQuery, [event_id]);
 
     res.status(200).json({
       status: true,
       message: "Event updated successfully",
-      result: result.rows[0],
+      result: fetchEventResult.rows[0],
     });
   } catch (error) {
     console.error(error);
@@ -226,9 +256,18 @@ exports.get = async (req, res) => {
 
   try {
     const query = `
-      SELECT e.*, qt.text AS category_text, qt.options AS category_options
+      SELECT 
+        e.*, 
+        qt.text AS category_text, 
+        qt.options AS category_options,
+        json_build_object(
+          'id', u.id,
+          'file_name', u.file_name,
+          'file_type', u.file_type
+        ) AS cover_image_details
       FROM events e
       LEFT JOIN question_types qt ON e.category_id = qt.id
+      LEFT JOIN uploads u ON e.cover_photo_id = u.id
       WHERE e.id = $1 AND e.user_id = $2;
     `;
 
@@ -265,53 +304,53 @@ exports.getAll = async (req, res) => {
     let query, countQuery;
     let queryParams = [];
 
-    if (id) {
-      // Exclusion conditions
-      const exclusionCondition = `
-        WHERE e.user_id NOT IN (
-          SELECT reported_user_id 
-          FROM report 
-          WHERE report_creator_id = $1
-        ) AND e.user_id NOT IN (
-          SELECT block_user_id 
-          FROM block_users 
-          WHERE block_creator_id = $1 AND status = TRUE
-        ) AND e.user_id NOT IN (
-          SELECT block_creator_id 
-          FROM block_users 
-          WHERE block_user_id = $1 AND status = TRUE
-        )
-      `;
+    const exclusionCondition = id
+      ? `
+      WHERE e.user_id NOT IN (
+        SELECT reported_user_id 
+        FROM report 
+        WHERE report_creator_id = $1
+      ) AND e.user_id NOT IN (
+        SELECT block_user_id 
+        FROM block_users 
+        WHERE block_creator_id = $1 AND status = TRUE
+      ) AND e.user_id NOT IN (
+        SELECT block_creator_id 
+        FROM block_users 
+        WHERE block_user_id = $1 AND status = TRUE
+      )
+    `
+      : "";
 
-      queryParams.push(id);
-      query = `
-        SELECT e.*, qt.text AS category_text, qt.options AS category_options
-        FROM events e
-        LEFT JOIN question_types qt ON e.category_id = qt.id
-        ${exclusionCondition}
-        ORDER BY e.id
-      `;
-      countQuery = `
-        SELECT COUNT(*) FROM events e
-        ${exclusionCondition};
-      `;
-    } else {
-      query = `
-        SELECT e.*, qt.text AS category_text, qt.options AS category_options
-        FROM events e
-        LEFT JOIN question_types qt ON e.category_id = qt.id
-        ORDER BY e.id
-      `;
-      countQuery = `SELECT COUNT(*) FROM events`;
-    }
+    if (id) queryParams.push(id);
 
-    // Apply pagination only if both page and limit are valid
+    query = `
+      SELECT 
+        e.*, 
+        qt.text AS category_text, 
+        qt.options AS category_options,
+        json_build_object(
+          'id', u.id,
+          'file_name', u.file_name,
+          'file_type', u.file_type
+        ) AS cover_image_details
+      FROM events e
+      LEFT JOIN question_types qt ON e.category_id = qt.id
+      LEFT JOIN uploads u ON e.cover_photo_id = u.id
+      ${exclusionCondition}
+      ORDER BY e.id
+    `;
+
+    countQuery = `SELECT COUNT(*) FROM events e ${exclusionCondition}`;
+
+    // Apply pagination
     if (page && limit) {
-      query += ` LIMIT $${id ? 2 : 1} OFFSET $${id ? 3 : 2}`;
+      query += ` LIMIT $${queryParams.length + 1} OFFSET $${
+        queryParams.length + 2
+      }`;
       queryParams.push(limit, offset);
     }
 
-    // Execute queries
     const result = await pool.query(query, queryParams);
     const countResult = await pool.query(countQuery, id ? [id] : []);
 
@@ -323,6 +362,7 @@ exports.getAll = async (req, res) => {
         .status(404)
         .json({ status: false, message: "No events found" });
     }
+
     return res.json({
       status: true,
       message: "Events retrieved successfully",
@@ -334,12 +374,10 @@ exports.getAll = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    return res.status(500).json({
-      status: false,
-      message: error.message,
-    });
+    return res.status(500).json({ status: false, message: error.message });
   }
 };
+
 
 exports.getAllByUser = async (req, res) => {
   const { user_id } = req.params;
@@ -348,11 +386,20 @@ exports.getAllByUser = async (req, res) => {
   const offset = (page - 1) * limit;
 
   try {
-    // Query to get events created by the specific user with category details
+    // Query to get events created by the specific user with category and cover image details
     const query = `
-      SELECT e.*, qt.text AS category_text, qt.options AS category_options
+      SELECT 
+        e.*, 
+        qt.text AS category_text, 
+        qt.options AS category_options,
+        json_build_object(
+          'id', u.id,
+          'file_name', u.file_name,
+          'file_type', u.file_type
+        ) AS cover_image_details
       FROM events e
       LEFT JOIN question_types qt ON e.category_id = qt.id
+      LEFT JOIN uploads u ON e.cover_photo_id = u.id
       WHERE e.user_id = $1
       ORDER BY e.id
       LIMIT $2 OFFSET $3;
@@ -402,9 +449,20 @@ exports.getAllByCategory = async (req, res) => {
   const offset = (page - 1) * limit;
 
   try {
-    // Query to get responses
+    // Query to get events by category with cover image details
     const query = `
-      SELECT * FROM events WHERE category_id = $1 ORDER BY id LIMIT $2 OFFSET $3;
+      SELECT 
+        e.*, 
+        json_build_object(
+          'id', u.id,
+          'file_name', u.file_name,
+          'file_type', u.file_type
+        ) AS cover_image_details
+      FROM events e
+      LEFT JOIN uploads u ON e.cover_photo_id = u.id
+      WHERE e.category_id = $1
+      ORDER BY e.id
+      LIMIT $2 OFFSET $3;
     `;
 
     const countQuery = `
@@ -423,14 +481,15 @@ exports.getAllByCategory = async (req, res) => {
         .status(404)
         .json({ status: false, message: "No events found" });
     }
+
     return res.json({
       status: true,
-      message: "Event retrieved successfully",
+      message: "Events retrieved successfully",
       totalItems,
       totalPages,
       currentPage: page,
       itemsPerPage: limit,
-      result: result.rows,
+      events: result.rows,
     });
   } catch (error) {
     console.error(error);
@@ -527,26 +586,44 @@ exports.search = async (req, res) => {
         .json({ status: false, message: "No search words provided" });
     }
 
-    const conditions = searchWords.map((word, index) => {
-      return `(title ILIKE $${index + 1})`;
-    });
-
+    const conditions = searchWords.map(
+      (word, index) => `(title ILIKE $${index + 1})`
+    );
     const values = searchWords.map((word) => `%${word.toLowerCase()}%`);
     let query, offset;
 
     if (page && limit) {
       limit = parseInt(limit);
       offset = (parseInt(page) - 1) * limit;
-      query = `SELECT * FROM events WHERE (${conditions.join(
-        " OR "
-      )}) ORDER BY id DESC LIMIT $${conditions.length + 1} OFFSET $${
-        conditions.length + 2
-      }`;
+      query = `
+        SELECT 
+          e.*, 
+          json_build_object(
+            'id', u.id,
+            'file_name', u.file_name,
+            'file_type', u.file_type
+          ) AS cover_image_details
+        FROM events e
+        LEFT JOIN uploads u ON e.cover_photo_id = u.id
+        WHERE (${conditions.join(" OR ")})
+        ORDER BY e.id DESC
+        LIMIT $${conditions.length + 1} OFFSET $${conditions.length + 2}
+      `;
       values.push(limit, offset);
     } else {
-      query = `SELECT * FROM events WHERE (${conditions.join(
-        " OR "
-      )}) ORDER BY id DESC`;
+      query = `
+        SELECT 
+          e.*, 
+          json_build_object(
+            'id', u.id,
+            'file_name', u.file_name,
+            'file_type', u.file_type
+          ) AS cover_image_details
+        FROM events e
+        LEFT JOIN uploads u ON e.cover_photo_id = u.id
+        WHERE (${conditions.join(" OR ")})
+        ORDER BY e.id DESC
+      `;
     }
 
     const result = await pool.query(query, values);
@@ -574,6 +651,8 @@ exports.search = async (req, res) => {
     });
   }
 };
+
+
 exports.filterEvents = async (req, res) => {
   const {
     user_id,
@@ -595,8 +674,12 @@ exports.filterEvents = async (req, res) => {
   const offset = (page - 1) * limit;
 
   try {
-    let baseQuery =
-      "FROM events e LEFT JOIN question_types qt ON e.category_id = qt.id WHERE 1 = 1";
+    let baseQuery = `
+      FROM events e
+      LEFT JOIN question_types qt ON e.category_id = qt.id
+      LEFT JOIN uploads u ON e.cover_photo_id = u.id
+      WHERE 1 = 1
+    `;
     const values = [];
     let valueCount = 1;
 
@@ -666,7 +749,18 @@ exports.filterEvents = async (req, res) => {
     const totalCount = parseInt(countResult.rows[0].count, 10);
 
     // Main query for fetching data
-    let query = `SELECT e.*, qt.text AS category_text, qt.options AS category_options ${baseQuery} ORDER BY e.id LIMIT $${valueCount++} OFFSET $${valueCount}`;
+    let query = `     SELECT 
+        e.*, 
+        qt.text AS category_text, 
+        qt.options AS category_options,
+        json_build_object(
+          'id', u.id,
+          'file_name', u.file_name,
+          'file_type', u.file_type
+        ) AS cover_image_details 
+        ${baseQuery} 
+        ORDER BY e.id 
+        LIMIT $${valueCount++} OFFSET $${valueCount}`;
     values.push(limit, offset);
 
     const result = await pool.query(query, values);
@@ -696,19 +790,16 @@ exports.filterEvents = async (req, res) => {
 
 exports.getAllEventsWithDetails = async (req, res) => {
   try {
-    // Validation for page and limit
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 10;
     const offset = (page - 1) * limit;
 
-    // Query to get the total count of events
     const countResult = await pool.query("SELECT COUNT(*) FROM events");
     const total = parseInt(countResult.rows[0].count, 10);
 
-    // Query to get paginated events with category details
     const paginatedEventsQuery = `
       SELECT 
-        events.*,
+        e.*,
         question_types.text AS category,
         json_agg(
           json_build_object(
@@ -719,12 +810,18 @@ exports.getAllEventsWithDetails = async (req, res) => {
             'end_timestamp', attendee_tasks.end_timestamp,
             'user', (SELECT row_to_json(u) FROM (SELECT id, email, full_name, block_status, payment_status, gender, age, location, city, country FROM users u WHERE u.id = attendee_tasks.user_id) u)
           )
-        ) as attendee_details
-      FROM events
-      LEFT JOIN attendee_tasks ON events.id = attendee_tasks.event_id
-      LEFT JOIN question_types ON events.category_id = question_types.id
-      GROUP BY events.id, question_types.text
-      ORDER BY events.created_at DESC
+        ) as attendee_details,
+        json_build_object(
+          'id', uploads.id,
+          'file_name', uploads.file_name,
+          'file_type', uploads.file_type
+        ) AS cover_image_details
+      FROM events e
+      LEFT JOIN attendee_tasks ON e.id = attendee_tasks.event_id
+      LEFT JOIN question_types ON e.category_id = question_types.id
+      LEFT JOIN uploads ON e.cover_photo_id = uploads.id
+      GROUP BY e.id, question_types.text, uploads.id
+      ORDER BY e.created_at DESC
       LIMIT $1 OFFSET $2;
     `;
 
@@ -742,6 +839,7 @@ exports.getAllEventsWithDetails = async (req, res) => {
     res.status(500).json({ status: false, message: "Internal server error" });
   }
 };
+
 
 exports.joinEventsWithTypes = async (req, res) => {
   const { event_id, user_id, type } = req.body;
@@ -797,7 +895,9 @@ exports.joinEventsWithTypes = async (req, res) => {
       type === "JOIN_PUBLIC_EVENT"
         ? "Pending"
         : type === "ACCEPT_INVITATION"
-        ? "Accepted" : type === "REJECT_INVITATION" ? "Rejected"
+        ? "Accepted"
+        : type === "REJECT_INVITATION"
+        ? "Rejected"
         : "Pending";
 
     const newAttendee = await pool.query(insertAttendeeQuery, [
@@ -938,13 +1038,21 @@ exports.getAllUpComingByUser = async (req, res) => {
     const userColumns = ["id", "email", "full_name", "city", "country"];
 
     const query = `
-      SELECT es.*, e.*, qt.text AS category, ${userColumns
-        .map((col) => "u." + col)
-        .join(", ")}
+      SELECT 
+        es.*,
+        e.*,
+        qt.text AS category,
+        ${userColumns.map((col) => "u." + col).join(", ")},
+        json_build_object(
+          'id', up.id,
+          'file_name', up.file_name,
+          'file_type', up.file_type
+        ) AS cover_image_details
       FROM events_status es
       JOIN events e ON es.event_id = e.id
       JOIN users u ON es.user_id = u.id
       LEFT JOIN question_types qt ON e.category_id = qt.id
+      LEFT JOIN uploads up ON e.cover_photo_id = up.id
       WHERE es.user_id = $1 AND es.status = 'UpComing'
       ORDER BY es.id
       LIMIT $2 OFFSET $3;

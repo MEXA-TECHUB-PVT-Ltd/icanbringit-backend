@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      /* Importing Google Fonts */
+      @import url("https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600&display=swap");
+
+      /* Email styles */
+      body {
+        font-family: "Open Sans", Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+      }
+      .container {
+        background-color: #fff;
+        padding: 40px;
+        margin: 20px auto;
+        max-width: 600px;
+        border-radius: 8px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      }
+      h2 {
+        color: #333;
+        font-size: 24px;
+        font-weight: 600;
+        margin-top: 0;
+      }
+      p {
+        color: #666;
+        line-height: 1.5;
+        margin-bottom: 20px;
+      }
+      .tick_bg {
+        background-color: #ff6b01;
+        padding: 10px;
+        border-radius: 4px;
+        text-align: center;
+      }
+      footer {
+        text-align: center;
+        font-size: 14px;
+        color: #999;
+      }
+      footer img {
+        margin: 0 10px;
+      }
+      .flex {
+        display: flex;
+      }
+      .justify-between {
+        justify-content: space-between;
+      }
+      .items-center {
+        align-items: center;
+      }
+      .gap-10 {
+        gap: 10px;
+      }
+      .text-center {
+        text-align: center;
+      }
+      /* Responsive design */
+      @media (max-width: 768px) {
+        .flex {
+          flex-direction: column;
+        }
+        .container {
+          width: 95%;
+          margin: 10px auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="main-container">
+      <div class="container">
+        <div class="flex justify-between items-center">
+          <!-- Replace with your logo image file -->
+          <img src="../../public/images/logo_dark.png" alt="Company Logo" />
+        </div>
+        <h2>
+          Turn Moments into Memories: Your Ultimate Event Journey Starts Here!
+        </h2>
+        <!-- Replace with your main image file -->
+        <img
+          src="../../public/images/container.png"
+          alt="Event Planning"
+          style="width: 100%; border-radius: 8px; margin-top: 20px"
+        />
+
+        <p>
+          Step into a world of seamless event planning with our innovative event
+          creator app. Designed to simplify and elevate your experience, this
+          app empowers you to effortlessly craft and customize unforgettable
+          moments. From brainstorming ideas to coordinating logistics, our
+          feature-packed platform guides you through every stage of event
+          creation.
+        </p>
+
+        <div class="flex justify-between items-center gap-10">
+          <!-- Repeat this block for each feature -->
+          <div class="child_tick">
+            <div class="tick_bg">
+              <!-- Replace with your tick image file -->
+              <img src="../../public/images/tick.png" alt="Event Created" />
+            </div>
+            <div>
+              <h4>Create Event</h4>
+              <p>
+                Turn ideas into events with ease. Birthdays, corporate
+                gatherings, or casual meet-ups, creating unforgettable
+                experiences is just a click away.
+              </p>
+            </div>
+          </div>
+          <div class="child_tick">
+            <div class="tick_bg">
+              <!-- Replace with your tick image file -->
+              <img src="../../public/images/tick.png" alt="Event Created" />
+            </div>
+            <h4>Create Event</h4>
+            <p>
+              Turn ideas into events with ease. Birthdays, corporate gatherings,
+              or casual meet-ups, creating unforgettable experiences is just a
+              click away.
+            </p>
+          </div>
+          <div class="child_tick">
+            <div class="tick_bg">
+              <!-- Replace with your tick image file -->
+              <img src="../../public/images/tick.png" alt="Event Created" />
+            </div>
+            <h4>Create Event</h4>
+            <p>
+              Turn ideas into events with ease. Birthdays, corporate gatherings,
+              or casual meet-ups, creating unforgettable experiences is just a
+              click away.
+            </p>
+          </div>
+          <!-- ... -->
+        </div>
+        <div class="text-center">
+          <strong>It's time to redefine the way you plan events</strong>
+          <p>&copy; 2023 Ride Share. All right reserved</p>
+        </div>
+        <footer>
+          <div class="text-center">
+            <!-- Replace with your social media icons -->
+            <img src="../../public/images/ints.png" alt="Instagram" />
+            <img src="../../public/images/fb.png" alt="Facebook" />
+            <img src="../../public/images/link.png" alt="LinkedIn" />
+            <img src="../../public/images/twiiter.png" alt="Twitter" />
+            <p>
+              If you have any questions, feel free message us at
+              icanbringit@gmail.com. All rights reserved. Update email
+              preferences or unsubscribe.
+            </p>
+          </div>
+        </footer>
+      </div>
+    </div>
+  </body>
+</html>
