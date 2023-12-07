@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Subscription Confirmation</title>
+    <style>
+      .mx-2 {
+        margin: 0 20px;
+      }
+    </style>
+  </head>
+  <body
+    style="
+      background-color: #f4f4f4;
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+    "
+  >
+    <div style="text-align: center; padding: 50px">
+      <div
+        style="
+          max-width: 600px;
+          margin: auto;
+          background-color: #ffffff;
+          box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        "
+      >
+        <div style="display: flex; justify-content: space-between; margin: 10px ">
+          <img src="../../public/images/logo_dark.png" alt="Company Logo" />
+          <p id="currentDate"></p>
+        </div>
+        <div style="background-color: #addafa; padding: 10px">
+          <div style="color: #333; padding: 20px; text-align: center">
+            <h1>Thank you for Subscribing to I Can Bring It</h1>
+          </div>
+          <table
+            style="margin: 20px auto; border-collapse: collapse; width: 100%"
+          >
+            <tr>
+              <td style="background-color: #addafa; padding: 10px">
+                Subscription Plan
+              </td>
+              <td style="background-color: #addafa; padding: 10px">
+                Premium Plan
+              </td>
+            </tr>
+            <tr>
+              <td style="background-color: #addafa; padding: 10px">
+                Subscription Start Date
+              </td>
+              <td style="background-color: #addafa; padding: 10px">
+                Oct 18, 2023
+              </td>
+            </tr>
+            <tr>
+              <td style="background-color: #addafa; padding: 10px">
+                Billing Frequency
+              </td>
+              <td style="background-color: #addafa; padding: 10px">Monthly</td>
+            </tr>
+            <tr>
+              <td style="background-color: #addafa; padding: 10px">
+                Billing Amount
+              </td>
+              <td style="background-color: #addafa; padding: 10px">$ 456</td>
+            </tr>
+            <tr>
+              <td style="background-color: #addafa; padding: 10px">
+                Payment Method
+              </td>
+              <td style="background-color: #addafa; padding: 10px">Stripe</td>
+            </tr>
+          </table>
+          <div style="margin: 10px">
+            <p>
+              We are thrilled to confirm that your subscription has been
+              successfully activated. You are now part of our growing family,
+              and we appreciate your decision to join us. Here's a summary of
+              your subscription details:
+            </p>
+          </div>
+        </div>
+
+        <!-- Footer Section -->
+        <div style="padding: 20px; text-align: center">
+          <p>&copy; 2023 Ride Share. All rights reserved.</p>
+          <img
+            src="../../public/images/ints.png"
+            alt="Instagram"
+            class="mx-2"
+          />
+          <img src="../../public/images/fb.png" alt="Facebook" class="mx-2" />
+          <img src="../../public/images/link.png" alt="LinkedIn" class="mx-2" />
+          <img
+            src="../../public/images/twiiter.png"
+            alt="Twitter"
+            class="mx-2"
+          />
+          <p>
+            If you have any questions, feel free message us at
+            RideShare@gmail.com.
+          </p>
+          <!-- Social Media Icons -->
+          <!-- Include your social media icons here -->
+        </div>
+      </div>
+    </div>
+
+    <script>
+      document.addEventListener("DOMContentLoaded", function () {
+        document.getElementById("currentDate").innerText =
+          new Date().toLocaleDateString();
+      });
+    </script>
+  </body>
+</html>

@@ -1,86 +1,106 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<style>
-    /* Add your CSS styling here */
-    body {
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style type="text/css">
+      body {
+        margin: 0;
+        padding: 0;
         font-family: Arial, sans-serif;
-        background-color: #000;
-        color: #333;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        flex-direction: column;
-    }
-    .container {
-        background-color: #fff;
-        padding: 20px;
-        margin: 10px auto;
-        width: 80%;
+        background-color: #f4f4f4;
+      }
+      .container {
         max-width: 600px;
-        border: 1px solid #dedede;
-        border-radius: 25px;
-    }
-    .verification-code {
-        font-size: 2em;
-        margin: 20px 0;
-        background-color: #000;
-        color: #fff;
+        margin: 20px auto;
+        padding: 20px;
+        background-color: #ffffff;
+      }
+      .header {
         padding: 10px;
-        border-radius: 10px;
-        letter-spacing: 10px;
-    }
-    .verification-parent {
         text-align: center;
+      }
+      .content {
+        margin: 20px 0;
+        text-align: center;
+      }
+      .verification {
+        padding: 10px 20px;
+        width: auto; /* Adjusts width automatically based on content */
+        border: 2px solid #1B1464; /* Solid or more pronounced border */
+        border-radius: 10px;
+        border-style: dashed;
+        display: inline-block;
+        font-family: "Courier New", monospace; /* Monospaced font for better readability */
+        font-size: 20px; /* Larger font size */
+        font-weight: bold; /* Bold font */
+        text-align: center; /* Center align text */
+      }
 
-    }
-    .white{
-        color: #fff;
-    }
-    .flex {
-        display: flex;
-    } .justify-between {
-        justify-content: space-between;
-    } .items-center {
-        align-items: center;
-    }
-    .justify-center{
-        justify-content: center;
-    }
-    .col {
-        flex-direction: column;
-    }
-</style>
-</head>
-<body>
-    <div class="main-container">
-        <div class="flex justify-between items-center">
-            <img src="../../public/images/logo.png" alt="">
-            <p><strong>Date:</strong> <%= date %></p>
+      .footer {
+        padding: 10px;
+        text-align: center;
+        font-size: 12px;
+      }
+      .button {
+        display: inline-block;
+        padding: 10px 15px;
+        margin: 10px auto;
+        background-color: #007bff;
+        color: white;
+        text-decoration: none;
+        border-radius: 5px;
+      }
+      .mx-2 {
+        margin: 0 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <!-- Your logo goes here -->
+        <img
+          src="../../public/images/logo_dark.png"
+          alt="Logo"
+          style="width: 200px"
+        />
+      </div>
+
+      <div class="content">
+        <h1>Email Verification</h1>
+        <p>
+          Great choice on joining I can bring it! To get the most out of your
+          experience, please verify your email by clicking the link below:
+        </p>
+        <!-- Verification Link -->
+        <div class="verification">
+          <strong> <%= verification_code %> </strong>
         </div>
-        <div class="container">
+        <p>
+          No worries if you didn't request this - just ignore the email, and
+          your account will stay inactive.
+        </p>
+      </div>
 
-            <h2>Email Verification</h2>
-            <p>Thank you for choosing Ride Share as your trusted platform. To ensure the security of your account and to complete the registration process, we need to verify your email address. Please find your unique verification code below:</p>
-            <div class="verification-parent">
-            <span class="verification-code">
-                <%= verificationCode %>
-            </div>
-            </span>
-        
-        <p>Please enter this code on the verification page to activate your account. If you didn't request this code, please ignore this email, and your account will remain inactive.</p>
-        
-        <p>We look forward to serving you.</p>
+      <div class="footer">
+        <p>&copy; 2023 I can bring it. All right reserved</p>
+        <!-- Social Media Icons -->
+        <div>
+          <img
+            src="../../public/images/ints.png"
+            alt="Instagram"
+            class="mx-2"
+          />
+          <img src="../../public/images/fb.png" alt="Facebook" class="mx-2" />
+          <img src="../../public/images/link.png" alt="LinkedIn" class="mx-2" />
+          <img
+            src="../../public/images/twiiter.png"
+            alt="Twitter"
+            class="mx-2"
+          />
+        </div>
+      </div>
     </div>
-    <footer class="flex justify-center items-center col">
-            <img src="../../public/images/logo.png" alt="">
-            <div>
-                <p>&copy 2023 Ride Share. All right reserved</p>
-            </div>
-            <!-- display icons -->
-    </footer>
-    </div>
-</body>
+  </body>
 </html>
