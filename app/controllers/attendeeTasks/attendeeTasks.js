@@ -15,8 +15,7 @@ exports.createTasks = async (req, res) => {
   if (!event_id || !user_id || !type) {
     return res.status(400).json({
       status: false,
-      message:
-        "event_id, user_id,  type are required.",
+      message: "event_id, user_id,  type are required.",
     });
   }
 
@@ -28,11 +27,13 @@ exports.createTasks = async (req, res) => {
 
   try {
     const checkUserExists = await pool.query(
-      "SELECT 1 FROM users WHERE id = $1",
+      "SELECT 1 FROM users WHERE id = $1 AND deleted_at IS NULL",
       [user_id]
     );
     if (checkUserExists.rowCount === 0) {
-      return res.status(404).json({ status: false, message: "User not found" });
+      return res
+        .status(404)
+        .json({ status: false, message: "User not found or deactivated" });
     }
 
     const checkEvent = await pool.query("SELECT 1 FROM events WHERE id = $1", [
@@ -48,7 +49,7 @@ exports.createTasks = async (req, res) => {
     let queryValues;
 
     if (type === "task") {
-      if (!text || !start_timestamp || !end_timestamp ) {
+      if (!text || !start_timestamp || !end_timestamp) {
         return res.status(400).json({
           status: false,
           message:
@@ -160,17 +161,21 @@ exports.getAssignedTasks = async (req, res) => {
   const offset = (page - 1) * limit;
 
   try {
-    // Query to fetch tasks assigned to a specific user
+    // Query to fetch tasks assigned to a specific user who is not marked as deleted
     const taskQuery = `
-      SELECT at.*
-      FROM attendee_tasks at
-      WHERE at.user_id = $1
-      ORDER BY at.id DESC
-      LIMIT $2 OFFSET $3;
+  SELECT at.*
+  FROM attendee_tasks at
+  LEFT JOIN users u ON at.user_id = u.id
+  WHERE at.user_id = $1 AND u.deleted_at IS NULL
+  ORDER BY at.id DESC
+  LIMIT $2 OFFSET $3;
     `;
 
     const countQuery = `
-      SELECT COUNT(*) FROM attendee_tasks WHERE user_id = $1;
+      SELECT COUNT(*)
+      FROM attendee_tasks at
+      LEFT JOIN users u ON at.user_id = u.id AND u.deleted_at IS NULL
+      WHERE at.user_id = $1;
     `;
 
     // Execute queries

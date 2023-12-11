@@ -372,7 +372,7 @@ exports.updateDeactivateStatus = async (req, res) => {
       });
     }
     const checkUserExists = await pool.query(
-      "SELECT * FROM users WHERE id = $1 AND deleted_at IS NULL",
+      "SELECT * FROM users WHERE id = $1",
       [user_id]
     );
     if (checkUserExists.rowCount === 0) {
@@ -382,7 +382,13 @@ exports.updateDeactivateStatus = async (req, res) => {
       });
     }
 
-    const query = `UPDATE users SET deactivate = $1, deleted_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *`;
+    let query;
+    if (deactivate) {
+      query = `UPDATE users SET deactivate = $1, deleted_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *`;
+    } else {
+      query = `UPDATE users SET deactivate = $1, deleted_at = null WHERE id = $2 RETURNING *`;
+    }
+
     const result = await pool.query(query, [deactivate, user_id]);
     res.json({
       status: true,
