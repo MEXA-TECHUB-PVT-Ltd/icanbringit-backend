@@ -718,7 +718,7 @@ exports.filterEvents = async (req, res) => {
     `;
     const values = [];
     let valueCount = 1;
-
+ 
     // Add filters based on provided query parameters
     if (user_id) {
       baseQuery += ` AND e.user_id = $${valueCount++}`;
