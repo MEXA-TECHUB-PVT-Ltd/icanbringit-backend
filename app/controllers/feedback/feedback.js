@@ -190,7 +190,7 @@ exports.get = async (req, res) => {
                'upload', up.file_name
              ) as user
       FROM feedback f
-      INNER JOIN users u ON f.user_id = u.id
+      INNER JOIN users u ON f.user_id = u.id AND deleted_at IS NULL
       LEFT JOIN uploads up ON u.uploads_id = up.id
       WHERE f.id = $1
       ORDER BY f.created_at DESC;
@@ -332,7 +332,7 @@ exports.search = async (req, res) => {
 
     res.json({
       status: true,
-      message: "Event retrieved successfully!",
+      message: "Feedback retrieved successfully!",
       count: result.rowCount,
       result: result.rows,
     });

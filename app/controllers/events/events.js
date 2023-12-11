@@ -20,13 +20,14 @@ exports.create = async (req, res) => {
 
   try {
     // Check if the user exists
-    const userExists = await pool.query("SELECT id FROM users WHERE id = $1", [
-      user_id,
-    ]);
+    const userExists = await pool.query(
+      "SELECT id FROM users WHERE id = $1 AND deleted_at IS NULL",
+      [user_id]
+    );
     if (userExists.rowCount === 0) {
       return res.status(404).json({
         status: false,
-        message: "User not found",
+        message: "User not found or deactivated",
       });
     }
     const categoryExits = await pool.query(
@@ -132,11 +133,14 @@ exports.update = async (req, res) => {
 
   try {
     // Check if the user exists
-    const userExists = await pool.query("SELECT id FROM users WHERE id = $1", [
-      user_id,
-    ]);
+    const userExists = await pool.query(
+      "SELECT id FROM users WHERE id = $1 AND deleted_at IS NULL",
+      [user_id]
+    );
     if (userExists.rowCount === 0) {
-      return res.status(404).json({ status: false, message: "User not found" });
+      return res
+        .status(404)
+        .json({ status: false, message: "User not found or deactivated" });
     }
 
     // Check if the event exists
@@ -192,7 +196,7 @@ exports.update = async (req, res) => {
       fieldsToUpdate.push(`event_details = $${valueCount++}`);
       values.push(event_details);
     }
-    if (no_guests) {
+    if (no_guests !== undefined) {
       fieldsToUpdate.push(`no_guests = $${valueCount++}`);
       values.push(no_guests);
     }
@@ -200,7 +204,7 @@ exports.update = async (req, res) => {
       fieldsToUpdate.push(`privacy = $${valueCount++}`);
       values.push(privacy);
     }
-    if (suggested_items) {
+    if (Array.isArray(suggested_items)) {
       fieldsToUpdate.push(`suggested_items = $${valueCount++}`);
       values.push(suggested_items);
     }
@@ -255,6 +259,15 @@ exports.get = async (req, res) => {
   }
 
   try {
+    const userExists = await pool.query(
+      "SELECT id FROM users WHERE id = $1 AND deleted_at IS NULL",
+      [user_id]
+    );
+    if (userExists.rowCount === 0) {
+      return res
+        .status(404)
+        .json({ status: false, message: "User not found or deactivated" });
+    }
     const query = `
       SELECT 
         e.*, 
@@ -295,34 +308,27 @@ exports.get = async (req, res) => {
 };
 
 exports.getAll = async (req, res) => {
-  const id = parseInt(req.query.user_id);
   const page = parseInt(req.query.page);
   const limit = parseInt(req.query.limit);
   const offset = page && limit ? (page - 1) * limit : 0;
 
   try {
     let query, countQuery;
-    let queryParams = [];
 
-    const exclusionCondition = id
-      ? `
+    let exclusionCondition = `
       WHERE e.user_id NOT IN (
         SELECT reported_user_id 
         FROM report 
-        WHERE report_creator_id = $1
       ) AND e.user_id NOT IN (
         SELECT block_user_id 
         FROM block_users 
-        WHERE block_creator_id = $1 AND status = TRUE
+        WHERE status = TRUE
       ) AND e.user_id NOT IN (
         SELECT block_creator_id 
         FROM block_users 
-        WHERE block_user_id = $1 AND status = TRUE
+        WHERE status = TRUE
       )
-    `
-      : "";
-
-    if (id) queryParams.push(id);
+    `;
 
     query = `
       SELECT 
@@ -337,6 +343,7 @@ exports.getAll = async (req, res) => {
       FROM events e
       LEFT JOIN question_types qt ON e.category_id = qt.id
       LEFT JOIN uploads u ON e.cover_photo_id = u.id
+      LEFT JOIN users usr ON e.user_id = usr.id AND usr.deleted_at IS NULL
       ${exclusionCondition}
       ORDER BY e.id
     `;
@@ -345,39 +352,56 @@ exports.getAll = async (req, res) => {
 
     // Apply pagination
     if (page && limit) {
-      query += ` LIMIT $${queryParams.length + 1} OFFSET $${
-        queryParams.length + 2
-      }`;
-      queryParams.push(limit, offset);
+      query += ` LIMIT $1 OFFSET $2`;
+      const result = await pool.query(query, [limit, offset]);
+      const countResult = await pool.query(countQuery);
+
+      const totalItems = parseInt(countResult.rows[0].count);
+      const totalPages = limit ? Math.ceil(totalItems / limit) : 1;
+
+      if (result.rowCount === 0) {
+        return res
+          .status(404)
+          .json({ status: false, message: "No events found" });
+      }
+
+      return res.json({
+        status: true,
+        message: "Events retrieved successfully",
+        totalItems,
+        totalPages,
+        currentPage: page || 1,
+        itemsPerPage: limit || totalItems,
+        events: result.rows,
+      });
+    } else {
+      const result = await pool.query(query);
+      const countResult = await pool.query(countQuery);
+
+      const totalItems = parseInt(countResult.rows[0].count);
+      const totalPages = 1;
+
+      if (result.rowCount === 0) {
+        return res
+          .status(404)
+          .json({ status: false, message: "No events found" });
+      }
+
+      return res.json({
+        status: true,
+        message: "Events retrieved successfully",
+        totalItems,
+        totalPages,
+        currentPage: page || 1,
+        itemsPerPage: totalItems,
+        events: result.rows,
+      });
     }
-
-    const result = await pool.query(query, queryParams);
-    const countResult = await pool.query(countQuery, id ? [id] : []);
-
-    const totalItems = parseInt(countResult.rows[0].count);
-    const totalPages = limit ? Math.ceil(totalItems / limit) : 1;
-
-    if (result.rowCount === 0) {
-      return res
-        .status(404)
-        .json({ status: false, message: "No events found" });
-    }
-
-    return res.json({
-      status: true,
-      message: "Events retrieved successfully",
-      totalItems,
-      totalPages,
-      currentPage: page || 1,
-      itemsPerPage: limit || totalItems,
-      events: result.rows,
-    });
   } catch (error) {
     console.error(error);
     return res.status(500).json({ status: false, message: error.message });
   }
 };
-
 
 exports.getAllByUser = async (req, res) => {
   const { user_id } = req.params;
@@ -387,6 +411,7 @@ exports.getAllByUser = async (req, res) => {
 
   try {
     // Query to get events created by the specific user with category and cover image details
+    // and ensuring the user is not marked as deleted
     const query = `
       SELECT 
         e.*, 
@@ -400,14 +425,18 @@ exports.getAllByUser = async (req, res) => {
       FROM events e
       LEFT JOIN question_types qt ON e.category_id = qt.id
       LEFT JOIN uploads u ON e.cover_photo_id = u.id
+      INNER JOIN users usr ON e.user_id = usr.id AND usr.deleted_at IS NULL
       WHERE e.user_id = $1
       ORDER BY e.id
       LIMIT $2 OFFSET $3;
     `;
 
-    // Adjusted count query to match the user_id filter
+    // Adjusted count query to match the user_id filter and check for deleted status
     const countQuery = `
-      SELECT COUNT(*) FROM events WHERE user_id = $1;
+      SELECT COUNT(*) 
+      FROM events e
+      INNER JOIN users usr ON e.user_id = usr.id AND usr.deleted_at IS NULL
+      WHERE e.user_id = $1;
     `;
 
     // Execute queries
@@ -450,6 +479,7 @@ exports.getAllByCategory = async (req, res) => {
 
   try {
     // Query to get events by category with cover image details
+    // and ensuring the user is not marked as deleted
     const query = `
       SELECT 
         e.*, 
@@ -460,13 +490,17 @@ exports.getAllByCategory = async (req, res) => {
         ) AS cover_image_details
       FROM events e
       LEFT JOIN uploads u ON e.cover_photo_id = u.id
+      INNER JOIN users usr ON e.user_id = usr.id AND usr.deleted_at IS NULL
       WHERE e.category_id = $1
       ORDER BY e.id
       LIMIT $2 OFFSET $3;
     `;
 
     const countQuery = `
-      SELECT COUNT(*) FROM events WHERE category_id = $1;
+      SELECT COUNT(*)
+      FROM events e
+      INNER JOIN users usr ON e.user_id = usr.id AND usr.deleted_at IS NULL
+      WHERE e.category_id = $1;
     `;
 
     // Execute queries
@@ -587,7 +621,7 @@ exports.search = async (req, res) => {
     }
 
     const conditions = searchWords.map(
-      (word, index) => `(title ILIKE $${index + 1})`
+      (word, index) => `(e.title ILIKE $${index + 1})`
     );
     const values = searchWords.map((word) => `%${word.toLowerCase()}%`);
     let query, offset;
@@ -605,6 +639,7 @@ exports.search = async (req, res) => {
           ) AS cover_image_details
         FROM events e
         LEFT JOIN uploads u ON e.cover_photo_id = u.id
+        INNER JOIN users usr ON e.user_id = usr.id AND usr.deleted_at IS NULL
         WHERE (${conditions.join(" OR ")})
         ORDER BY e.id DESC
         LIMIT $${conditions.length + 1} OFFSET $${conditions.length + 2}
@@ -621,6 +656,7 @@ exports.search = async (req, res) => {
           ) AS cover_image_details
         FROM events e
         LEFT JOIN uploads u ON e.cover_photo_id = u.id
+        INNER JOIN users usr ON e.user_id = usr.id AND usr.deleted_at IS NULL
         WHERE (${conditions.join(" OR ")})
         ORDER BY e.id DESC
       `;
@@ -652,7 +688,6 @@ exports.search = async (req, res) => {
   }
 };
 
-
 exports.filterEvents = async (req, res) => {
   const {
     user_id,
@@ -678,6 +713,7 @@ exports.filterEvents = async (req, res) => {
       FROM events e
       LEFT JOIN question_types qt ON e.category_id = qt.id
       LEFT JOIN uploads u ON e.cover_photo_id = u.id
+      INNER JOIN users usr ON e.user_id = usr.id AND usr.deleted_at IS NULL
       WHERE 1 = 1
     `;
     const values = [];
@@ -820,6 +856,7 @@ exports.getAllEventsWithDetails = async (req, res) => {
       LEFT JOIN attendee_tasks ON e.id = attendee_tasks.event_id
       LEFT JOIN question_types ON e.category_id = question_types.id
       LEFT JOIN uploads ON e.cover_photo_id = uploads.id
+            INNER JOIN users usr ON e.user_id = usr.id AND usr.deleted_at IS NULL
       GROUP BY e.id, question_types.text, uploads.id
       ORDER BY e.created_at DESC
       LIMIT $1 OFFSET $2;
@@ -839,7 +876,6 @@ exports.getAllEventsWithDetails = async (req, res) => {
     res.status(500).json({ status: false, message: "Internal server error" });
   }
 };
-
 
 exports.joinEventsWithTypes = async (req, res) => {
   const { event_id, user_id, type } = req.body;
@@ -893,7 +929,7 @@ exports.joinEventsWithTypes = async (req, res) => {
     const status = type === "JOIN_PUBLIC_EVENT" || type === "ACCEPT_INVITATION";
     const accepted =
       type === "JOIN_PUBLIC_EVENT"
-        ? "Pending"
+        ? "Accepted"
         : type === "ACCEPT_INVITATION"
         ? "Accepted"
         : type === "REJECT_INVITATION"
@@ -974,7 +1010,7 @@ exports.updateJoinEventAttendeeTypeAndStatus = async (req, res) => {
       new_type === "JOIN_PUBLIC_EVENT" || new_type === "ACCEPT_INVITATION";
     const accepted =
       new_type === "JOIN_PUBLIC_EVENT"
-        ? "Pending"
+        ? "Accepted"
         : new_type === "ACCEPT_INVITATION"
         ? "Accepted"
         : new_type === "REJECT_INVITATION"
@@ -1050,7 +1086,7 @@ exports.getAllUpComingByUser = async (req, res) => {
         ) AS cover_image_details
       FROM events_status es
       JOIN events e ON es.event_id = e.id
-      JOIN users u ON es.user_id = u.id
+      JOIN users u ON es.user_id = u.id AND deleted_at IS NULL
       LEFT JOIN question_types qt ON e.category_id = qt.id
       LEFT JOIN uploads up ON e.cover_photo_id = up.id
       WHERE es.user_id = $1 AND es.status = 'UpComing'
