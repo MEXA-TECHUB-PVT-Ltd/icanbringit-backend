@@ -39,10 +39,22 @@ exports.deleteRow = async (tableName, column) => {
 
 exports.createNotification = async (req, res) => {
   try {
-    const { sender_id, receiver_id, type, title, content } = req.body;
+    const { sender_id, receiver_id, event_id, type, title, content } = req.body;
+    const condition = {
+      column: "id",
+      value: type,
+    };
+    const oldType = await getSingleRow("notification_type", condition);
+    if (oldType[0].name === "event" && !event_id) {
+      res.status(500).json({
+        statusCode: 400,
+        message: "event_id is required for event type",
+      });
+    }
+    const insertEventId = oldType[0].name === "event" ? event_id : null;
     const createQuery = `
-        INSERT INTO public.notification (sender_id, receiver_id, type, title, content)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO public.notification (sender_id, receiver_id, type, title, content, event_id)
+        VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING *`;
     const result = await pool.query(createQuery, [
       sender_id,
@@ -50,6 +62,7 @@ exports.createNotification = async (req, res) => {
       type,
       title,
       content,
+      insertEventId,
     ]);
 
     if (result.rowCount === 1) {
@@ -59,6 +72,7 @@ SELECT
   n.title,
   n.content,
   n.is_read,
+  n.event_id,
   n.created_at AS notification_created_at,
   t.name AS notification_type_name,
   u.id AS sender_id,
@@ -81,13 +95,11 @@ WHERE n.id = $1
 
       const notifications = await pool.query(query, [result.rows[0].id]);
       if (notifications.rowCount === 0) {
-        return res
-          .status(400)
-          .json({
-            statusCode: 400,
-            message:
-              "Notification not created, make sure sender and receiver users are exists",
-          });
+        return res.status(400).json({
+          statusCode: 400,
+          message:
+            "Notification not created, make sure sender and receiver users are exists",
+        });
       }
       return res.status(201).json({
         statusCode: 201,
@@ -112,6 +124,10 @@ WHERE n.id = $1
       res
         .status(400)
         .json({ statusCode: 400, message: "notification type does not exist" });
+    } else if (error.constraint === "notification_event_id_fkey") {
+      res
+        .status(400)
+        .json({ statusCode: 400, message: "event does not exist" });
     } else {
       res
         .status(500)
@@ -148,6 +164,7 @@ exports.updateNotification = async (req, res) => {
           n.title,
           n.content,
           n.is_read,
+          n.event_id,
           n.created_at AS notification_created_at,
           t.name AS notification_type_name,
           u.id AS sender_id,
@@ -214,6 +231,7 @@ exports.getAllNotificationsByUser = async (req, res) => {
         n.title,
         n.content,
         n.is_read,
+        n.event_id,
         n.created_at AS notification_created_at,
         t.name AS notification_type_name,
         u.id AS sender_id,
@@ -282,6 +300,7 @@ exports.getAllReadNotificationsByUser = async (req, res) => {
         n.title,
         n.content,
         n.is_read,
+        n.event_id,
         n.created_at AS notification_created_at,
         t.name AS notification_type_name,
         u.id AS sender_id,
@@ -349,6 +368,7 @@ exports.getAllUnReadNotificationsByUser = async (req, res) => {
         n.title,
         n.content,
         n.is_read,
+        n.event_id,
         n.created_at AS notification_created_at,
         t.name AS notification_type_name,
         u.id AS sender_id,
@@ -478,6 +498,7 @@ exports.readNotification = async (req, res) => {
           n.title,
           n.content,
           n.is_read,
+        n.event_id,
           n.created_at AS notification_created_at,
           t.name AS notification_type_name,
           u.id AS sender_id,
