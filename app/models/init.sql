@@ -2,6 +2,7 @@ CREATE TABLE IF NOT EXISTS uploads (
   id SERIAL PRIMARY KEY,
   file_name VARCHAR(255),
   file_type VARCHAR(255),
+  file_url TEXT,
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );
@@ -22,7 +23,6 @@ CREATE TABLE IF NOT EXISTS users(
   location JSONB,
   block_status BOOLEAN DEFAULT FALSE,
   payment_status BOOLEAN DEFAULT FALSE,
-  total_events INT DEFAULT 0,
   deleted_at TIMESTAMP WITH TIME ZONE DEFAULT NULL,
   is_deleted BOOLEAN DEFAULT FALSE,
   deactivate BOOLEAN DEFAULT FALSE,
@@ -157,6 +157,7 @@ CREATE TABLE IF NOT EXISTS notification (
   id SERIAL PRIMARY KEY,
   sender_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   receiver_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  event_id INT REFERENCES events(id) ON DELETE CASCADE,
   type INT NOT NULL REFERENCES notification_type(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
   content TEXT NOT NULL,

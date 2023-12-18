@@ -488,6 +488,31 @@ exports.signIn = async (req, res) => {
 
     const user = checkUserExists.rows[0];
 
+    if (user.deactivate) {
+      const deactivatedUserQuery = `
+        SELECT
+          EXTRACT(DAY FROM (CURRENT_TIMESTAMP - deleted_at)) AS days_since_deleted,
+          90 - EXTRACT(DAY FROM (CURRENT_TIMESTAMP - deleted_at)) AS remaining_days
+        FROM
+          users
+        WHERE
+          email = $1 AND deactivate = TRUE
+      `;
+      const deactivatedUserDetails = await pool.query(deactivatedUserQuery, [
+        email,
+      ]);
+
+      if (deactivatedUserDetails.rowCount > 0) {
+        const deactivatedUserData = deactivatedUserDetails.rows[0];
+        return res.status(409).json({
+          status: false,
+          message: "Your account has been deactivated",
+          days_since_deleted: deactivatedUserData.days_since_deleted,
+          remaining_days: deactivatedUserData.remaining_days,
+        });
+      }
+    }
+
     // Handle password-based sign-in
     if (signin_type === "email") {
       if (!password) {
@@ -565,24 +590,28 @@ exports.getUser = async (req, res) => {
 
   try {
     const userQuery = await pool.query(
-      `SELECT users.*, uploads.file_name, uploads.file_type 
+      `SELECT users.*, uploads.file_name, uploads.file_type, uploads.file_url
       FROM users 
       LEFT JOIN uploads ON users.uploads_id = uploads.id 
-      WHERE users.id = $1 AND users.role = 'user' AND users.deleted_at IS NULL`,
+      WHERE users.id = $1 AND users.role = 'user'`,
       [id]
     );
-
     if (userQuery.rowCount === 0) {
       return res.status(404).json({
         status: false,
         message: "User not found",
       });
     }
-
+    
     const userData = userQuery.rows[0];
     delete userData.password;
     delete userData.otp;
-
+    
+    if (userData.deactivate) {
+      return res
+        .status(400)
+        .json({ status: false, message: "Your account has been deactivated" });
+    }
     return res.status(200).json({
       status: true,
       message: "User retrieved successfully",
@@ -601,7 +630,7 @@ exports.getAllUsers = async (req, res) => {
       limit = "ALL",
       offset = 0,
       sortColumn = "id", // Default sorting column
-      sortOrder = "asc", // Default sorting order
+      sortOrder = "desc", // Default sorting order
       total,
       totalPages,
     } = await getPaginatedResults(req, "users");
@@ -617,7 +646,7 @@ exports.getAllUsers = async (req, res) => {
                    'response_type', qtr.type
                  )
                ) AS responses,
-               up.file_name, up.file_type
+               up.file_name, up.file_type, up.file_url
         FROM users u
         LEFT JOIN question_type_responses qtr ON u.id = qtr.user_id
         LEFT JOIN uploads up ON u.uploads_id = up.id
@@ -636,7 +665,7 @@ exports.getAllUsers = async (req, res) => {
                    'response_type', qtr.type
                  )
                ) AS responses,
-               up.file_name, up.file_type
+               up.file_name, up.file_type, up.file_url
         FROM users u
         LEFT JOIN question_type_responses qtr ON u.id = qtr.user_id
         LEFT JOIN uploads up ON u.uploads_id = up.id
@@ -676,7 +705,7 @@ exports.getAllSubscribedUsers = async (req, res) => {
     if (isPaginationProvided) {
       // Apply LIMIT and OFFSET if pagination parameters are provided
       userQuery = `
-        SELECT u.*, up.file_name, up.file_type 
+        SELECT u.*, up.file_name, up.file_type , up.file_url
         FROM users u
         LEFT JOIN uploads up ON u.uploads_id = up.id
         WHERE u.deleted_at IS NULL AND u.role = 'user' AND u.payment_status = true
@@ -687,7 +716,7 @@ exports.getAllSubscribedUsers = async (req, res) => {
     } else {
       // Fetch all subscribed users if pagination parameters are not provided
       userQuery = `
-        SELECT u.*, up.file_name, up.file_type 
+        SELECT u.*, up.file_name, up.file_type, up.file_url
         FROM users u
         LEFT JOIN uploads up ON u.uploads_id = up.id
         WHERE u.deleted_at IS NULL AND u.role = 'user' AND u.payment_status = true
@@ -743,7 +772,7 @@ exports.getAllBlockUsers = async (req, res) => {
     if (isPaginationProvided) {
       // Apply LIMIT and OFFSET if pagination parameters are provided
       userQuery = `
-        SELECT u.*, up.file_name, up.file_type 
+        SELECT u.*, up.file_name, up.file_type , up.file_url
         FROM users u
         LEFT JOIN uploads up ON u.uploads_id = up.id
         WHERE u.deleted_at IS NULL AND u.role = 'user' AND u.block_status = true
@@ -754,7 +783,7 @@ exports.getAllBlockUsers = async (req, res) => {
     } else {
       // Fetch all blocked users if pagination parameters are not provided
       userQuery = `
-        SELECT u.*, up.file_name, up.file_type 
+        SELECT u.*, up.file_name, up.file_type , up.file_url
         FROM users u
         LEFT JOIN uploads up ON u.uploads_id = up.id
         WHERE u.deleted_at IS NULL AND u.role = 'user' AND u.block_status = true
@@ -805,7 +834,7 @@ exports.getRecentlyDeletedUsers = async (req, res) => {
     const deletedUsersQuery = `
       SELECT
         u.*,
-        up.file_name, up.file_type,
+        up.file_name, up.file_type,up.file_url,
         EXTRACT(DAY FROM (${currentTimestamp} - u.deleted_at)) AS days_since_deleted,
         90 - EXTRACT(DAY FROM (${currentTimestamp} - u.deleted_at)) AS remaining_days
       FROM

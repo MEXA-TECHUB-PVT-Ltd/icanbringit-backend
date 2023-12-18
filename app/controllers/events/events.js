@@ -20,14 +20,19 @@ exports.create = async (req, res) => {
 
   try {
     // Check if the user exists
-    const userExists = await pool.query(
-      "SELECT id FROM users WHERE id = $1 AND deleted_at IS NULL",
-      [user_id]
-    );
+    const userExists = await pool.query("SELECT * FROM users WHERE id = $1", [
+      user_id,
+    ]);
     if (userExists.rowCount === 0) {
       return res.status(404).json({
         status: false,
-        message: "User not found or deactivated",
+        message: "User not found",
+      });
+    }
+    if (userExists.rows[0].deactivate) {
+      return res.status(404).json({
+        status: false,
+        message: "Can't create event. Your account has been deactivated",
       });
     }
     const categoryExits = await pool.query(
@@ -88,7 +93,8 @@ exports.create = async (req, res) => {
         json_build_object(
           'id', uploads.id,
           'file_name', uploads.file_name,
-          'file_type', uploads.file_type
+          'file_type', uploads.file_type,
+          'file_url', uploads.file_url
         ) AS cover_image_details
       FROM events
       LEFT JOIN uploads ON events.cover_photo_id = uploads.id
@@ -228,7 +234,8 @@ exports.update = async (req, res) => {
         json_build_object(
           'id', uploads.id,
           'file_name', uploads.file_name,
-          'file_type', uploads.file_type
+          'file_type', uploads.file_type,
+          'file_url', uploads.file_url
         ) AS cover_image_details
       FROM events
       LEFT JOIN uploads ON events.cover_photo_id = uploads.id
@@ -276,7 +283,8 @@ exports.get = async (req, res) => {
         json_build_object(
           'id', u.id,
           'file_name', u.file_name,
-          'file_type', u.file_type
+          'file_type', u.file_type,
+          'file_url', u.file_url
         ) AS cover_image_details
       FROM events e
       LEFT JOIN question_types qt ON e.category_id = qt.id
@@ -338,7 +346,8 @@ exports.getAll = async (req, res) => {
         json_build_object(
           'id', u.id,
           'file_name', u.file_name,
-          'file_type', u.file_type
+          'file_type', u.file_type,
+          'file_url', u.file_url
         ) AS cover_image_details
       FROM events e
       LEFT JOIN question_types qt ON e.category_id = qt.id
@@ -410,8 +419,20 @@ exports.getAllByUser = async (req, res) => {
   const offset = (page - 1) * limit;
 
   try {
-    // Query to get events created by the specific user with category and cover image details
-    // and ensuring the user is not marked as deleted
+    const checkUserExist = await pool.query(
+      `SELECT * FROM users WHERE id = $1`,
+      [user_id]
+    );
+    if (checkUserExist.rowCount === 0) {
+      return res.status(400).json({ status: false, message: "User not found" });
+    }
+    if (checkUserExist.rows[0].deactivate) {
+      return res.status(400).json({
+        status: false,
+        message: "Your account is currently deactivated",
+      });
+    }
+
     const query = `
       SELECT 
         e.*, 
@@ -420,7 +441,8 @@ exports.getAllByUser = async (req, res) => {
         json_build_object(
           'id', u.id,
           'file_name', u.file_name,
-          'file_type', u.file_type
+          'file_type', u.file_type,
+          'file_url', u.file_url
         ) AS cover_image_details
       FROM events e
       LEFT JOIN question_types qt ON e.category_id = qt.id
@@ -486,7 +508,8 @@ exports.getAllByCategory = async (req, res) => {
         json_build_object(
           'id', u.id,
           'file_name', u.file_name,
-          'file_type', u.file_type
+          'file_type', u.file_type,
+          'file_url', u.file_url
         ) AS cover_image_details
       FROM events e
       LEFT JOIN uploads u ON e.cover_photo_id = u.id
@@ -635,7 +658,8 @@ exports.search = async (req, res) => {
           json_build_object(
             'id', u.id,
             'file_name', u.file_name,
-            'file_type', u.file_type
+            'file_type', u.file_type,
+            'file_url', u.file_url
           ) AS cover_image_details
         FROM events e
         LEFT JOIN uploads u ON e.cover_photo_id = u.id
@@ -652,7 +676,8 @@ exports.search = async (req, res) => {
           json_build_object(
             'id', u.id,
             'file_name', u.file_name,
-            'file_type', u.file_type
+            'file_type', u.file_type,
+            'file_url', u.file_url
           ) AS cover_image_details
         FROM events e
         LEFT JOIN uploads u ON e.cover_photo_id = u.id
@@ -718,7 +743,7 @@ exports.filterEvents = async (req, res) => {
     `;
     const values = [];
     let valueCount = 1;
- 
+
     // Add filters based on provided query parameters
     if (user_id) {
       baseQuery += ` AND e.user_id = $${valueCount++}`;
@@ -792,7 +817,8 @@ exports.filterEvents = async (req, res) => {
         json_build_object(
           'id', u.id,
           'file_name', u.file_name,
-          'file_type', u.file_type
+          'file_type', u.file_type,
+          'file_url', u.file_url
         ) AS cover_image_details 
         ${baseQuery} 
         ORDER BY e.id 
@@ -830,7 +856,10 @@ exports.getAllEventsWithDetails = async (req, res) => {
     const limit = parseInt(req.query.limit, 10) || 10;
     const offset = (page - 1) * limit;
 
-    const countResult = await pool.query("SELECT COUNT(*) FROM events");
+    const countResult = await pool.query(`  SELECT COUNT(*)
+      FROM events e
+      INNER JOIN users usr ON e.user_id = usr.id AND usr.deleted_at IS NULL
+    `);
     const total = parseInt(countResult.rows[0].count, 10);
 
     const paginatedEventsQuery = `
@@ -850,7 +879,8 @@ exports.getAllEventsWithDetails = async (req, res) => {
         json_build_object(
           'id', uploads.id,
           'file_name', uploads.file_name,
-          'file_type', uploads.file_type
+          'file_type', uploads.file_type,
+          'file_url', uploads.file_url
         ) AS cover_image_details
       FROM events e
       LEFT JOIN attendee_tasks ON e.id = attendee_tasks.event_id
@@ -1071,6 +1101,21 @@ exports.getAllUpComingByUser = async (req, res) => {
   const offset = (page - 1) * limit;
 
   try {
+    const checkUserExist = await pool.query(
+      `SELECT * FROM users WHERE id = $1`,
+      [user_id]
+    );
+    if (checkUserExist.rowCount === 0) {
+      return res.status(400).json({ status: false, message: "User not found" });
+    }
+    if (checkUserExist.rows[0].deactivate) {
+      return res
+        .status(400)
+        .json({
+          status: false,
+          message: "Your account is currently deactivated",
+        });
+    }
     const userColumns = ["id", "email", "full_name", "city", "country"];
 
     const query = `
@@ -1082,7 +1127,8 @@ exports.getAllUpComingByUser = async (req, res) => {
         json_build_object(
           'id', up.id,
           'file_name', up.file_name,
-          'file_type', up.file_type
+          'file_type', up.file_type,
+          'file_url', up.file_url
         ) AS cover_image_details
       FROM events_status es
       JOIN events e ON es.event_id = e.id
