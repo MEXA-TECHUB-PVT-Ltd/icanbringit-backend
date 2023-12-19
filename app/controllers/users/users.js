@@ -11,6 +11,18 @@ const {
   sendSuccessResponse,
 } = require("../../util/genericDBFunc");
 
+const renderEmailTemplate = async (templatePath, data) => {
+  return new Promise((resolve, reject) => {
+    ejs.renderFile(templatePath, data, (err, htmlContent) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(htmlContent);
+      }
+    });
+  });
+};
+
 exports.create = async (req, res) => {
   const {
     email,
@@ -105,60 +117,26 @@ exports.create = async (req, res) => {
           "emailVerification.ejs"
         );
         const dataForEjs = {
-          verificationCode: otp,
+          verification_code: otp,
           date: new Date().toLocaleDateString("en-US"),
         };
 
-        ejs.renderFile(
+        const htmlContent = await renderEmailTemplate(
           emailTemplatePath,
-          dataForEjs,
-          async (err, htmlContent) => {
-            if (err) {
-              console.log(err); // Handle error appropriately
-              return res.status(500).json({
-                status: false,
-                message: "Error rendering email template",
-              });
-            } else {
-              // Use the rendered HTML content for the email
-              const emailSent = await sendEmail(
-                email,
-                "Sign Up Verification",
-                htmlContent
-              );
-
-              if (!emailSent.success) {
-                return res.status(500).json({
-                  status: false,
-                  message: emailSent.message,
-                });
-              }
-            }
-          }
+          dataForEjs
         );
-        ejs.renderFile(signUpTemplatePath, async (err, htmlContent) => {
-          if (err) {
-            console.log(err); // Handle error appropriately
-            return res.status(500).json({
-              status: false,
-              message: "Error rendering email template",
-            });
-          } else {
-            // Use the rendered HTML content for the email
-            const emailSent = await sendEmail(
-              email,
-              "Sign Up Verification",
-              htmlContent
-            );
+        const emailSent = await sendEmail(
+          email,
+          "Sign Up Verification",
+          htmlContent
+        );
 
-            if (!emailSent.success) {
-              return res.status(500).json({
-                status: false,
-                message: emailSent.message,
-              });
-            }
-          }
-        });
+        if (!emailSent.success) {
+          return res.status(500).json({
+            status: false,
+            message: emailSent.message,
+          });
+        }
         break;
       case "google":
         if (!google_access_token) {
@@ -229,7 +207,7 @@ exports.create = async (req, res) => {
 
     response.result.token = token;
 
-    return res.status(201).json({
+    res.json({
       status: true,
       message: "Users created successfully",
       result: response,
@@ -602,11 +580,11 @@ exports.getUser = async (req, res) => {
         message: "User not found",
       });
     }
-    
+
     const userData = userQuery.rows[0];
     delete userData.password;
     delete userData.otp;
-    
+
     if (userData.deactivate) {
       return res
         .status(400)
