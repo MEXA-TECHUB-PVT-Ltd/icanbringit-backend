@@ -3,7 +3,7 @@ const { CloudinaryStorage } = require("multer-storage-cloudinary");
 const { v4: uuidv4 } = require("uuid");
 const cloudinary = require("../config/cloudinary.config");
 
-const storage = new CloudinaryStorage({
+const cloudinaryStorage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
     folder: "iCanBringIt",
@@ -25,6 +25,17 @@ const storage = new CloudinaryStorage({
   },
 });
 
-const upload = multer({ storage: storage });
+const cloudinaryUpload = multer({ storage: cloudinaryStorage });
 
-module.exports = upload;
+const localStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, "public/uploads");
+  },
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + "-" + file.originalname);
+  },
+});
+
+const localUpload = multer({ storage: localStorage });
+
+module.exports = { cloudinaryUpload, localUpload };

@@ -8,13 +8,25 @@ exports.upload = async (req, res) => {
     });
   }
 
-  const file = req.file; // File is already uploaded to Cloudinary
+  const file = req.file;
   console.log(file);
+
+  let fileUrl;
+
+  // Check if the file is uploaded to Cloudinary
+  if (
+    file.path &&
+    (file.path.startsWith("http://") || file.path.startsWith("https://"))
+  ) {
+    fileUrl = file.path;
+  } else {
+    fileUrl = `${process.env.SERVER_URL}/public/uploads/${file.filename}`;
+  }
 
   try {
     const result = await pool.query(
       "INSERT INTO uploads (file_name, file_type, file_url) VALUES ($1, $2, $3) RETURNING *",
-      [file.originalname, file.mimetype, file.path]
+      [file.originalname, file.mimetype, fileUrl]
     );
 
     const response = {
