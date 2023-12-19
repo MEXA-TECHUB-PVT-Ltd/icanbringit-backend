@@ -948,6 +948,9 @@ exports.joinEventsWithTypes = async (req, res) => {
     if (userExists.rowCount === 0) {
       return res.status(404).json({ status: false, message: "User not found" });
     }
+    if (userExists.rows[0].deactivate) {
+      return res.status(401).json({ status: false, message: "Your account is deactivated. Access denied" });
+    }
 
     // Insert into attendee table
     const insertAttendeeQuery = `
@@ -1109,40 +1112,45 @@ exports.getAllUpComingByUser = async (req, res) => {
       return res.status(400).json({ status: false, message: "User not found" });
     }
     if (checkUserExist.rows[0].deactivate) {
-      return res
-        .status(400)
-        .json({
-          status: false,
-          message: "Your account is currently deactivated",
-        });
+      return res.status(400).json({
+        status: false,
+        message: "Your account is currently deactivated",
+      });
     }
     const userColumns = ["id", "email", "full_name", "city", "country"];
 
     const query = `
-      SELECT 
-        es.*,
-        e.*,
-        qt.text AS category,
-        ${userColumns.map((col) => "u." + col).join(", ")},
-        json_build_object(
-          'id', up.id,
-          'file_name', up.file_name,
-          'file_type', up.file_type,
-          'file_url', up.file_url
-        ) AS cover_image_details
-      FROM events_status es
-      JOIN events e ON es.event_id = e.id
-      JOIN users u ON es.user_id = u.id AND deleted_at IS NULL
-      LEFT JOIN question_types qt ON e.category_id = qt.id
-      LEFT JOIN uploads up ON e.cover_photo_id = up.id
-      WHERE es.user_id = $1 AND es.status = 'UpComing'
-      ORDER BY es.id
-      LIMIT $2 OFFSET $3;
-    `;
+SELECT 
+  es.*,
+  e.*,
+  qt.text AS category,
+  ${userColumns.map((col) => "u." + col).join(", ")},
+  json_build_object(
+    'id', up.id,
+    'file_name', up.file_name,
+    'file_type', up.file_type,
+    'file_url', up.file_url
+  ) AS cover_image_details
+FROM events_status es
+JOIN events e ON es.event_id = e.id
+JOIN users u ON e.user_id = u.id AND u.deactivate IS FALSE
+LEFT JOIN question_types qt ON e.category_id = qt.id
+LEFT JOIN uploads up ON e.cover_photo_id = up.id
+WHERE es.user_id = $1 AND es.status = 'UpComing'
+ORDER BY es.id DESC
+LIMIT $2 OFFSET $3;
+`;
 
-    const countQuery = `
-      SELECT COUNT(*) FROM events_status WHERE user_id = $1 AND status = 'UpComing';
-    `;
+const countQuery = `
+  SELECT COUNT(*) 
+  FROM events_status es
+  JOIN events e ON es.event_id = e.id
+  JOIN users u ON e.user_id = u.id AND u.deactivate IS FALSE
+  WHERE es.user_id = $1 
+    AND es.status = 'UpComing';
+`;
+
+
 
     // Execute queries
     const result = await pool.query(query, [user_id, limit, offset]);

@@ -161,20 +161,36 @@ exports.getAssignedTasks = async (req, res) => {
   const offset = (page - 1) * limit;
 
   try {
-    // Query to fetch tasks assigned to a specific user who is not marked as deleted
+    // First, check if the user is deactivated
+    const userCheckQuery = `
+      SELECT deactivate FROM users WHERE id = $1;
+    `;
+    const userCheckResult = await pool.query(userCheckQuery, [user_id]);
+    if (userCheckResult.rowCount === 0) {
+      return res.status(404).json({ status: false, message: "User not found" });
+    }
+    if (userCheckResult.rows[0].deactivate) {
+      return res
+        .status(403)
+        .json({
+          status: false,
+          message: "Your account is deactivated. Access to tasks is denied.",
+        });
+    }
+
+    // Query to fetch tasks assigned to the specific user
     const taskQuery = `
-  SELECT at.*
-  FROM attendee_tasks at
-  LEFT JOIN users u ON at.user_id = u.id
-  WHERE at.user_id = $1 AND u.deleted_at IS NULL
-  ORDER BY at.id DESC
-  LIMIT $2 OFFSET $3;
+      SELECT at.*
+      FROM attendee_tasks at
+      LEFT JOIN users u ON at.user_id = u.id
+      WHERE at.user_id = $1 AND u.deleted_at IS NULL
+      ORDER BY at.id DESC
+      LIMIT $2 OFFSET $3;
     `;
 
     const countQuery = `
       SELECT COUNT(*)
       FROM attendee_tasks at
-      LEFT JOIN users u ON at.user_id = u.id AND u.deleted_at IS NULL
       WHERE at.user_id = $1;
     `;
 
@@ -209,6 +225,7 @@ exports.getAssignedTasks = async (req, res) => {
   }
 };
 
+
 exports.getAllEventAttendee = async (req, res) => {
   const { event_id } = req.params;
   const page = parseInt(req.query.page) || 1;
@@ -226,19 +243,22 @@ exports.getAllEventAttendee = async (req, res) => {
       "u.payment_status",
     ];
 
-    // Query to get attendees of a specific event
+    // Query to get attendees of a specific event who are not deactivated
     const query = `
-  SELECT a.*, ${userColumns.join(", ")}, up.file_name
-  FROM attendee a
-  JOIN users u ON a.attendee_id = u.id
-  LEFT JOIN uploads up ON u.uploads_id = up.id
-  WHERE a.event_id = $1 AND accepted = 'Accepted'
-  ORDER BY a.id
-  LIMIT $2 OFFSET $3;
-`;
+      SELECT a.*, ${userColumns.join(", ")}, up.file_name
+      FROM attendee a
+      JOIN users u ON a.attendee_id = u.id
+      LEFT JOIN uploads up ON u.uploads_id = up.id
+      WHERE a.event_id = $1 AND a.accepted = 'Accepted' AND u.deactivate IS FALSE
+      ORDER BY a.id DESC
+      LIMIT $2 OFFSET $3;
+    `;
 
     const countQuery = `
-      SELECT COUNT(*) FROM attendee WHERE event_id = $1 AND accepted = 'Accepted';
+      SELECT COUNT(*) 
+      FROM attendee a
+      JOIN users u ON a.attendee_id = u.id
+      WHERE a.event_id = $1 AND a.accepted = 'Accepted' AND u.deactivate IS FALSE;
     `;
 
     // Execute queries
@@ -271,6 +291,7 @@ exports.getAllEventAttendee = async (req, res) => {
     });
   }
 };
+
 
 exports.search = async (req, res) => {
   const { name } = req.params;
