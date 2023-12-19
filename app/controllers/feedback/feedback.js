@@ -11,15 +11,20 @@ exports.add = async (req, res) => {
   }
 
   try {
-    const userIdExists = await pool.query(
-      "SELECT 1 FROM users WHERE id = $1",
-      [user_id]
-    );
+    const userIdExists = await pool.query("SELECT * FROM users WHERE id = $1", [
+      user_id,
+    ]);
 
     if (userIdExists.rowCount === 0) {
       return res.status(400).json({
         status: false,
         message: "Invalid user_id provided.",
+      });
+    }
+    if (userIdExists.rows[0].deactivate) {
+      return res.status(400).json({
+        status: false,
+        message: "Your account is deactivated. Access denied.",
       });
     }
     const query = `
@@ -61,14 +66,19 @@ exports.update = async (req, res) => {
 
   try {
     // Check if the user exists
-    const userExists = await pool.query(
-      "SELECT 1 FROM users WHERE id = $1",
-      [user_id]
-    );
+    const userExists = await pool.query("SELECT * FROM users WHERE id = $1", [
+      user_id,
+    ]);
     if (userExists.rowCount < 1) {
       return res.status(404).json({
         status: false,
         message: "User not found.",
+      });
+    }
+    if (userExists.rows[0].deactivate) {
+      return res.status(400).json({
+        status: false,
+        message: "Your account is deactivated. Access denied.",
       });
     }
 
@@ -131,16 +141,20 @@ exports.getAll = async (req, res) => {
                'upload', up.file_name
              ) as user
       FROM feedback f
-      INNER JOIN users u ON f.user_id = u.id
+      INNER JOIN users u ON f.user_id = u.id AND u.deactivate IS FALSE
       LEFT JOIN uploads up ON u.uploads_id = up.id
       ORDER BY f.created_at DESC
       LIMIT $1 OFFSET $2;
     `;
     const result = await pool.query(query, [limit, offset]);
 
-    // Calculate total number of feedback
+    // Calculate total number of feedback excluding deactivated users
     const totalFeedbackCount = parseInt(
-      (await pool.query("SELECT COUNT(*) FROM feedback")).rows[0].count
+      (
+        await pool.query(
+          "SELECT COUNT(*) FROM feedback f INNER JOIN users u ON f.user_id = u.id WHERE u.deactivate IS FALSE"
+        )
+      ).rows[0].count
     );
     const totalPages = Math.ceil(totalFeedbackCount / limit);
 
@@ -168,7 +182,6 @@ exports.getAll = async (req, res) => {
     });
   }
 };
-
 
 exports.get = async (req, res) => {
   const { id } = req.params;
@@ -216,7 +229,6 @@ exports.get = async (req, res) => {
     });
   }
 };
-
 
 exports.delete = async (req, res) => {
   const { id } = req.params;
@@ -276,7 +288,6 @@ exports.deleteAll = async (req, res) => {
     });
   }
 };
-
 
 exports.search = async (req, res) => {
   const { query: search } = req.params;
