@@ -20,8 +20,8 @@ exports.create = async (req, res) => {
   try {
     // Check if question exists
     const questionExists = await pool.query(
-      "SELECT id FROM question_types WHERE id = $1",
-      [question_type_id]
+      "SELECT id FROM question_types WHERE id = $1 AND type = $2",
+      [question_type_id, type]
     );
     if (questionExists.rowCount === 0) {
       return res.status(404).json({
@@ -63,7 +63,7 @@ exports.create = async (req, res) => {
     // Retrieve the question and the response
     const responseId = insertResult.rows[0].id;
     const retrieveQuery = `
-      SELECT qt.id as question_id, qt.text as question_text, qt.options as question_options, qt.type as question_type,
+      SELECT qt.id as question_id, qt.text as question_text, qt.type as question_type,
              qtr.id as response_id, qtr.user_id, qtr.type as response_type
       FROM question_types qt
       JOIN question_type_responses qtr ON qt.id = qtr.question_types_id

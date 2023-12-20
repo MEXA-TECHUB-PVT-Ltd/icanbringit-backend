@@ -568,10 +568,53 @@ exports.getUser = async (req, res) => {
 
   try {
     const userQuery = await pool.query(
-      `SELECT users.*, uploads.file_name, uploads.file_type, uploads.file_url
-      FROM users 
-      LEFT JOIN uploads ON users.uploads_id = uploads.id 
-      WHERE users.id = $1 AND users.role = 'user'`,
+      `
+      SELECT 
+    users.*, 
+    uploads.file_name, 
+    uploads.file_type, 
+    uploads.file_url,
+    json_agg(
+      CASE 
+        WHEN qt.type = 'event_category' THEN 
+          json_build_object(
+            'response_id', qtr.id, 
+            'question_type_id', qtr.question_types_id, 
+            'type', qt.type
+          ) 
+        ELSE NULL 
+      END
+    ) FILTER (WHERE qt.type = 'event_category') AS event_category_responses,
+    json_agg(
+      CASE 
+        WHEN qt.type = 'location' THEN 
+          json_build_object(
+            'response_id', qtr.id, 
+            'question_type_id', qtr.question_types_id, 
+            'type', qt.type
+          ) 
+        ELSE NULL 
+      END
+    ) FILTER (WHERE qt.type = 'location') AS location_responses,
+    json_agg(
+      CASE 
+        WHEN qt.type = 'food' THEN 
+          json_build_object(
+            'response_id', qtr.id, 
+            'question_type_id', qtr.question_types_id, 
+            'type', qt.type
+          ) 
+        ELSE NULL 
+      END
+    ) FILTER (WHERE qt.type = 'food') AS food_responses
+FROM users 
+LEFT JOIN uploads ON users.uploads_id = uploads.id
+LEFT JOIN question_type_responses qtr ON users.id = qtr.user_id
+LEFT JOIN question_types qt ON qtr.question_types_id = qt.id
+WHERE users.id = $1 AND users.role = 'user'
+GROUP BY users.id, uploads.id
+
+      `,
       [id]
     );
     if (userQuery.rowCount === 0) {

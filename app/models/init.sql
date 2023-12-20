@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS users(
   location JSONB,
   block_status BOOLEAN DEFAULT FALSE,
   payment_status BOOLEAN DEFAULT FALSE,
+  device_id TEXT,
   deleted_at TIMESTAMP WITH TIME ZONE DEFAULT NULL,
   is_deleted BOOLEAN DEFAULT FALSE,
   deactivate BOOLEAN DEFAULT FALSE,
@@ -35,7 +36,6 @@ CREATE TABLE IF NOT EXISTS users(
 CREATE TABLE IF NOT EXISTS question_types(
   id SERIAL PRIMARY KEY,
   text TEXT,
-  options TEXT [],
   type TEXT NOT NULL,
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
@@ -44,8 +44,6 @@ CREATE TABLE IF NOT EXISTS question_type_responses(
   id SERIAL PRIMARY KEY,
   user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   question_types_id INT NOT NULL REFERENCES question_types(id) ON DELETE CASCADE,
-  text TEXT,
-  type TEXT NOT NULL,
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );
