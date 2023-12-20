@@ -54,7 +54,7 @@ exports.create = async (req, res) => {
     ]);
 
     if (insertResult.rowCount === 0) {
-      return res.status(400).json({
+      return res.status(400).json({ 
         status: false,
         message: "Error in saving response",
       });
