@@ -201,7 +201,7 @@ exports.get = async (req, res) => {
   try {
     const query = `
       SELECT qtr.id as response_id, qtr.user_id, qtr.type as response_type,
-             qt.id as question_id, qt.text as question_text, qt.options as question_options, qt.type as question_type
+             qt.id as question_id, qt.text as question_text, qt.type as question_type
       FROM question_type_responses qtr
       JOIN question_types qt ON qtr.question_types_id = qt.id
       WHERE qtr.id = $1 AND qtr.type = $2;
@@ -254,7 +254,7 @@ exports.getAll = async (req, res) => {
 
     // Query to get responses with join
     const query = `
-      SELECT qtr.*, qt.text, qt.options
+      SELECT qtr.*, qt.text
       FROM question_type_responses qtr
       JOIN question_types qt ON qtr.question_types_id = qt.id
       WHERE qtr.type = $1 AND qtr.user_id = $2

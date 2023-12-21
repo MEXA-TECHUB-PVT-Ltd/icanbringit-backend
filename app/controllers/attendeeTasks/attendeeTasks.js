@@ -170,22 +170,38 @@ exports.getAssignedTasks = async (req, res) => {
       return res.status(404).json({ status: false, message: "User not found" });
     }
     if (userCheckResult.rows[0].deactivate) {
-      return res
-        .status(403)
-        .json({
-          status: false,
-          message: "Your account is deactivated. Access to tasks is denied.",
-        });
+      return res.status(403).json({
+        status: false,
+        message: "Your account is deactivated. Access to tasks is denied.",
+      });
     }
 
     // Query to fetch tasks assigned to the specific user
     const taskQuery = `
-      SELECT at.*
-      FROM attendee_tasks at
-      LEFT JOIN users u ON at.user_id = u.id
-      WHERE at.user_id = $1 AND u.deleted_at IS NULL
-      ORDER BY at.id DESC
-      LIMIT $2 OFFSET $3;
+SELECT at.*,
+  json_build_object(
+    'id', e.id,
+    'title', e.title,
+    'category_id', e.category_id,
+    'cover_photo_id', e.cover_photo_id,
+    'start_timestamp', e.start_timestamp,
+    'end_timestamp', e.end_timestamp,
+    'event_type', e.event_type,
+    'virtual_link', e.virtual_link,
+    'location', e.location,
+    'event_details', e.event_details,
+    'no_guests', e.no_guests,
+    'privacy', e.privacy,
+    'suggested_items', e.suggested_items,
+    'total_attendee', e.total_attendee
+  ) as event_info
+FROM attendee_tasks at
+LEFT JOIN users u ON at.user_id = u.id
+LEFT JOIN events e ON at.event_id = e.id
+WHERE at.user_id = $1 AND u.deleted_at IS NULL
+ORDER BY at.id DESC
+LIMIT $2 OFFSET $3;
+
     `;
 
     const countQuery = `
@@ -225,7 +241,6 @@ exports.getAssignedTasks = async (req, res) => {
   }
 };
 
-
 exports.getAllEventAttendee = async (req, res) => {
   const { event_id } = req.params;
   const page = parseInt(req.query.page) || 1;
@@ -241,18 +256,31 @@ exports.getAllEventAttendee = async (req, res) => {
       "u.age",
       "u.block_status",
       "u.payment_status",
+      // Add more fields from uploads if needed
     ];
 
-    // Query to get attendees of a specific event who are not deactivated
     const query = `
-      SELECT a.*, ${userColumns.join(", ")}, up.file_name
-      FROM attendee a
-      JOIN users u ON a.attendee_id = u.id
-      LEFT JOIN uploads up ON u.uploads_id = up.id
-      WHERE a.event_id = $1 AND a.accepted = 'Accepted' AND u.deactivate IS FALSE
-      ORDER BY a.id DESC
-      LIMIT $2 OFFSET $3;
-    `;
+  SELECT a.*,
+    json_build_object(
+      'full_name', u.full_name,
+      'email', u.email,
+      'gender', u.gender,
+      'age', u.age,
+      'block_status', u.block_status,
+      'payment_status', u.payment_status,
+      'upload', json_build_object(
+        'file_name', up.file_name,
+        'file_type', up.file_type,
+        'file_url', up.file_url
+      )
+    ) as user_info
+  FROM attendee a
+  JOIN users u ON a.attendee_id = u.id
+  LEFT JOIN uploads up ON u.uploads_id = up.id
+  WHERE a.event_id = $1 AND a.accepted = 'Accepted' AND u.deactivate IS FALSE
+  ORDER BY a.id DESC
+  LIMIT $2 OFFSET $3;
+`;
 
     const countQuery = `
       SELECT COUNT(*) 
@@ -291,7 +319,6 @@ exports.getAllEventAttendee = async (req, res) => {
     });
   }
 };
-
 
 exports.search = async (req, res) => {
   const { name } = req.params;
