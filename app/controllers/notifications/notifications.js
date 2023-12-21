@@ -90,7 +90,6 @@ JOIN notification_type t ON n.type = t.id
 WHERE n.id = $1
   AND u.deleted_at IS NULL  -- Exclude notifications from deleted sender
   AND r.deleted_at IS NULL; -- Exclude notifications to deleted receiver
-
 `;
 
       const notifications = await pool.query(query, [result.rows[0].id]);
@@ -178,7 +177,8 @@ exports.updateNotification = async (req, res) => {
         JOIN notification_type t ON n.type = t.id
         WHERE n.id=$1
         AND u.deleted_at IS NULL  -- Exclude notifications from deleted sender
-        AND r.deleted_at IS NULL; -- Exclude notifications to deleted receiver;`;
+        AND r.deleted_at IS NULL; -- Exclude notifications to deleted receiver;
+        `;
 
       const notifications = await pool.query(query, [notification_id]);
       if (notifications.rowCount === 0) {
@@ -226,25 +226,41 @@ exports.getAllNotificationsByUser = async (req, res) => {
     const perPage = parseInt(req.query.limit || 5);
     const offset = (page - 1) * perPage;
     let query = `
-      SELECT
-        n.id AS notification_id,
-        n.title,
-        n.content,
-        n.is_read,
-        n.event_id,
-        n.created_at AS notification_created_at,
-        t.name AS notification_type_name,
-        u.id AS sender_id,
-        u.full_name AS sender_full_name,
-        r.id AS receiver_id,
-        r.full_name AS receiver_full_name
-       
-      FROM notification n
-      JOIN users u ON n.sender_id = u.id
-      JOIN users r ON n.receiver_id = r.id
-      JOIN notification_type t ON n.type = t.id
-      WHERE n.receiver_id=$1 AND r.is_deleted=FALSE
-      ORDER BY n.created_at DESC `;
+SELECT
+  n.id AS notification_id,
+  n.title,
+  n.content,
+  n.is_read,
+  n.event_id,
+  n.created_at AS notification_created_at,
+  t.name AS notification_type_name,
+  json_build_object(
+    'id', u.id,
+    'full_name', u.full_name,
+    'upload', json_build_object(
+      'file_name', su.file_name,
+      'file_type', su.file_type,
+      'file_url', su.file_url
+    )
+  ) AS sender,
+  json_build_object(
+    'id', r.id,
+    'full_name', r.full_name,
+    'upload', json_build_object(
+      'file_name', ru.file_name,
+      'file_type', ru.file_type,
+      'file_url', ru.file_url
+    )
+  ) AS receiver
+FROM notification n
+JOIN users u ON n.sender_id = u.id
+LEFT JOIN uploads su ON u.uploads_id = su.id
+JOIN users r ON n.receiver_id = r.id
+LEFT JOIN uploads ru ON r.uploads_id = ru.id
+JOIN notification_type t ON n.type = t.id
+WHERE n.receiver_id = $1 AND r.is_deleted = FALSE
+ORDER BY n.created_at DESC
+ `;
 
     if (req.query.page !== undefined && req.query.limit !== undefined) {
       query += ` LIMIT $2 OFFSET $3;`;

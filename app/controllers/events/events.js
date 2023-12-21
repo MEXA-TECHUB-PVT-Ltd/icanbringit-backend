@@ -279,7 +279,6 @@ exports.get = async (req, res) => {
       SELECT 
         e.*, 
         qt.text AS category_text, 
-        qt.options AS category_options,
         json_build_object(
           'id', u.id,
           'file_name', u.file_name,
@@ -342,7 +341,6 @@ exports.getAll = async (req, res) => {
       SELECT 
         e.*, 
         qt.text AS category_text, 
-        qt.options AS category_options,
         json_build_object(
           'id', u.id,
           'file_name', u.file_name,
@@ -437,7 +435,6 @@ exports.getAllByUser = async (req, res) => {
       SELECT 
         e.*, 
         qt.text AS category_text, 
-        qt.options AS category_options,
         json_build_object(
           'id', u.id,
           'file_name', u.file_name,
@@ -500,8 +497,6 @@ exports.getAllByCategory = async (req, res) => {
   const offset = (page - 1) * limit;
 
   try {
-    // Query to get events by category with cover image details
-    // and ensuring the user is not marked as deleted
     const query = `
       SELECT 
         e.*, 
@@ -813,7 +808,6 @@ exports.filterEvents = async (req, res) => {
     let query = `     SELECT 
         e.*, 
         qt.text AS category_text, 
-        qt.options AS category_options,
         json_build_object(
           'id', u.id,
           'file_name', u.file_name,
