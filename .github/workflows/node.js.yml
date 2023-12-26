@@ -1,4 +1,3 @@
-
 name: Node.js CI
 
 on:
@@ -19,20 +18,20 @@ jobs:
       - name: Check if server.js is running
         id: pm2-check
         run: |
-          if pm2 show app; then
-            echo "App is already running with PM2."
-            echo "::set-output name=app_running::true"
+          if pm2 show server; then
+            echo "Server is already running with PM2."
+            echo "::set-output name=server_running::true"
           else
-            echo "App is not running with PM2."
-            echo "::set-output name=app_running::false"
+            echo "Server is not running with PM2."
+            echo "::set-output name=server_running::false"
           fi
       - name: Install NPM packages
         run: npm i
       - name: Start or Stop server.js with PM2
         run: |
-          if [[ "${{ steps.pm2-check.outputs.app_running }}" == "true" ]]; then
+          if [[ "${{ steps.pm2-check.outputs.server_running }}" == "true" ]]; then
             echo "Stopping server.js with PM2"
-            pm2 stop app
+            pm2 stop server
           else
             echo "Starting server.js with PM2"
             pm2 start -f server.js
@@ -40,12 +39,9 @@ jobs:
           fi
       - name: Restart Nginx (if needed)
         run: |
-          if [[ "${{ steps.pm2-check.outputs.app_running }}" == "true" ]]; then
-            echo "App is already running, no need to restart Nginx."
+          if [[ "${{ steps.pm2-check.outputs.server_running }}" == "true" ]]; then
+            echo "Server is already running, no need to restart Nginx."
           else
-            echo "App was started or restarted, restarting Nginx..."
+            echo "Server was started or restarted, restarting Nginx..."
             echo "mtechub123" | sudo -S sudo service nginx restart
           fi
-
-
-
