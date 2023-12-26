@@ -11,7 +11,7 @@ const app = express();
 
 app.set("view engine", "ejs");
 
-const PORT = process.env.PORT || 3025;
+const PORT = 5200;
 
 app.use(cors());
 app.use(express.json());
