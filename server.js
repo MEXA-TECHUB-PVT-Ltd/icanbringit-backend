@@ -10,7 +10,7 @@ const ejs = require("ejs");
 const app = express();
 
 app.set("view engine", "ejs");
-
+// use this port always
 const PORT = 5200;
 
 app.use(cors());
