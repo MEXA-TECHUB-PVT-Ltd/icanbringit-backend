@@ -15,6 +15,7 @@ const faq = require("./faq/faq");
 const feedback = require("./feedback/feedback");
 const notifications = require("./notifications/notifications");
 const notificationTypes = require("./notificationTypes/notificationTypes");
+const suggested_items = require("./suggested_items/suggested_items");
 
 
 router.use("/users", users);
@@ -30,6 +31,7 @@ router.use("/faq", faq);
 router.use("/feedback", feedback);
 router.use("/notifications", notifications);
 router.use("/notificationTypes", notificationTypes);
+router.use("/suggested_items", suggested_items);
 
 
 module.exports = router;

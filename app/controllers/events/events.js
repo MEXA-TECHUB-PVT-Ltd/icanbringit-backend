@@ -75,7 +75,7 @@ exports.create = async (req, res) => {
       event_details,
       no_guests,
       privacy,
-      suggested_items,
+      [],
     ]);
 
     if (eventResult.rowCount === 0) {
@@ -86,19 +86,38 @@ exports.create = async (req, res) => {
 
     const eventId = eventResult.rows[0].id;
 
+    // Insert suggested items
+    for (const itemId of suggested_items) {
+      const insertSuggestedItemQuery = `
+        INSERT INTO event_suggested_items (event_id, suggested_item_id)
+        VALUES ($1, $2)`;
+      await pool.query(insertSuggestedItemQuery, [eventId, itemId]);
+    }
+
     // Fetch the event with cover image details using JOIN
     const fetchEventQuery = `
-      SELECT 
-        events.*, 
-        json_build_object(
-          'id', uploads.id,
-          'file_name', uploads.file_name,
-          'file_type', uploads.file_type,
-          'file_url', uploads.file_url
-        ) AS cover_image_details
-      FROM events
-      LEFT JOIN uploads ON events.cover_photo_id = uploads.id
-      WHERE events.id = $1`;
+SELECT 
+  events.*, 
+  json_build_object(
+    'id', uploads.id,
+    'file_name', uploads.file_name,
+    'file_type', uploads.file_type,
+    'file_url', uploads.file_url
+  ) AS cover_image_details,
+  array_agg(json_build_object(
+    'id', si.id,
+    'name', si.name,
+    'created_by', si.created_by,
+    'created_at', si.created_at,
+    'updated_at', si.updated_at
+  )) AS suggested_items
+FROM events
+LEFT JOIN uploads ON events.cover_photo_id = uploads.id
+LEFT JOIN event_suggested_items esi ON events.id = esi.event_id
+LEFT JOIN suggested_items si ON esi.suggested_item_id = si.id
+WHERE events.id = $1
+GROUP BY events.id, uploads.id;
+`;
 
     const fetchEventResult = await pool.query(fetchEventQuery, [eventId]);
 
@@ -211,8 +230,19 @@ exports.update = async (req, res) => {
       values.push(privacy);
     }
     if (Array.isArray(suggested_items)) {
-      fieldsToUpdate.push(`suggested_items = $${valueCount++}`);
-      values.push(suggested_items);
+      // Delete existing suggested items for this event
+      await pool.query(
+        "DELETE FROM event_suggested_items WHERE event_id = $1",
+        [event_id]
+      );
+
+      // Insert new suggested items
+      for (const itemId of suggested_items) {
+        await pool.query(
+          "INSERT INTO event_suggested_items (event_id, suggested_item_id) VALUES ($1, $2)",
+          [event_id, itemId]
+        );
+      }
     }
 
     // If no fields to update, return an error
@@ -229,17 +259,28 @@ exports.update = async (req, res) => {
     await pool.query(query, values);
 
     const fetchEventQuery = `
-      SELECT 
-        events.*, 
-        json_build_object(
-          'id', uploads.id,
-          'file_name', uploads.file_name,
-          'file_type', uploads.file_type,
-          'file_url', uploads.file_url
-        ) AS cover_image_details
-      FROM events
-      LEFT JOIN uploads ON events.cover_photo_id = uploads.id
-      WHERE events.id = $1`;
+    SELECT 
+  events.*, 
+  json_build_object(
+    'id', uploads.id,
+    'file_name', uploads.file_name,
+    'file_type', uploads.file_type,
+    'file_url', uploads.file_url
+  ) AS cover_image_details,
+  array_agg(json_build_object(
+    'id', si.id,
+    'name', si.name,
+    'created_by', si.created_by,
+    'created_at', si.created_at,
+    'updated_at', si.updated_at
+  )) AS suggested_items
+FROM events
+LEFT JOIN uploads ON events.cover_photo_id = uploads.id
+LEFT JOIN event_suggested_items esi ON events.id = esi.event_id
+LEFT JOIN suggested_items si ON esi.suggested_item_id = si.id
+WHERE events.id = $1
+GROUP BY events.id, uploads.id;
+`;
 
     const fetchEventResult = await pool.query(fetchEventQuery, [event_id]);
 
@@ -257,7 +298,6 @@ exports.update = async (req, res) => {
 exports.get = async (req, res) => {
   const { id, user_id } = req.params;
 
-  // Check if parameters are provided
   if (!id || !user_id) {
     return res.status(400).json({
       status: false,
@@ -275,6 +315,7 @@ exports.get = async (req, res) => {
         .status(404)
         .json({ status: false, message: "User not found or deactivated" });
     }
+
     const query = `
       SELECT 
         e.*, 
@@ -284,11 +325,21 @@ exports.get = async (req, res) => {
           'file_name', u.file_name,
           'file_type', u.file_type,
           'file_url', u.file_url
-        ) AS cover_image_details
+        ) AS cover_image_details,
+        COALESCE(array_agg(json_build_object(
+          'id', si.id,
+          'name', si.name,
+          'created_by', si.created_by,
+          'created_at', si.created_at,
+          'updated_at', si.updated_at
+        )) FILTER (WHERE si.id IS NOT NULL), '{}') AS suggested_items
       FROM events e
       LEFT JOIN question_types qt ON e.category_id = qt.id
       LEFT JOIN uploads u ON e.cover_photo_id = u.id
-      WHERE e.id = $1 AND e.user_id = $2;
+      LEFT JOIN event_suggested_items esi ON e.id = esi.event_id
+      LEFT JOIN suggested_items si ON esi.suggested_item_id = si.id
+      WHERE e.id = $1 AND e.user_id = $2
+      GROUP BY e.id, qt.id, u.id;
     `;
 
     const result = await pool.query(query, [id, user_id]);
@@ -337,6 +388,7 @@ exports.getAll = async (req, res) => {
       )
     `;
 
+    // Modified query to include suggested items
     query = `
       SELECT 
         e.*, 
@@ -346,64 +398,54 @@ exports.getAll = async (req, res) => {
           'file_name', u.file_name,
           'file_type', u.file_type,
           'file_url', u.file_url
-        ) AS cover_image_details
+        ) AS cover_image_details,
+        COALESCE(array_agg(json_build_object(
+          'id', si.id,
+          'name', si.name,
+          'created_by', si.created_by,
+          'created_at', si.created_at,
+          'updated_at', si.updated_at
+        )) FILTER (WHERE si.id IS NOT NULL), '{}') AS suggested_items
       FROM events e
       LEFT JOIN question_types qt ON e.category_id = qt.id
       LEFT JOIN uploads u ON e.cover_photo_id = u.id
-      LEFT JOIN users usr ON e.user_id = usr.id AND usr.deleted_at IS NULL
+      LEFT JOIN event_suggested_items esi ON e.id = esi.event_id
+      LEFT JOIN suggested_items si ON esi.suggested_item_id = si.id
       ${exclusionCondition}
-      ORDER BY e.id
+      GROUP BY e.id, qt.id, u.id
+      ORDER BY e.id DESC
     `;
 
     countQuery = `SELECT COUNT(*) FROM events e ${exclusionCondition}`;
 
-    // Apply pagination
     if (page && limit) {
       query += ` LIMIT $1 OFFSET $2`;
-      const result = await pool.query(query, [limit, offset]);
-      const countResult = await pool.query(countQuery);
-
-      const totalItems = parseInt(countResult.rows[0].count);
-      const totalPages = limit ? Math.ceil(totalItems / limit) : 1;
-
-      if (result.rowCount === 0) {
-        return res
-          .status(404)
-          .json({ status: false, message: "No events found" });
-      }
-
-      return res.json({
-        status: true,
-        message: "Events retrieved successfully",
-        totalItems,
-        totalPages,
-        currentPage: page || 1,
-        itemsPerPage: limit || totalItems,
-        events: result.rows,
-      });
-    } else {
-      const result = await pool.query(query);
-      const countResult = await pool.query(countQuery);
-
-      const totalItems = parseInt(countResult.rows[0].count);
-      const totalPages = 1;
-
-      if (result.rowCount === 0) {
-        return res
-          .status(404)
-          .json({ status: false, message: "No events found" });
-      }
-
-      return res.json({
-        status: true,
-        message: "Events retrieved successfully",
-        totalItems,
-        totalPages,
-        currentPage: page || 1,
-        itemsPerPage: totalItems,
-        events: result.rows,
-      });
     }
+
+    const result = await pool.query(
+      query,
+      page && limit ? [limit, offset] : []
+    );
+    const countResult = await pool.query(countQuery);
+
+    const totalItems = parseInt(countResult.rows[0].count);
+    const totalPages = limit ? Math.ceil(totalItems / limit) : 1;
+
+    if (result.rowCount === 0) {
+      return res
+        .status(404)
+        .json({ status: false, message: "No events found" });
+    }
+
+    return res.json({
+      status: true,
+      message: "Events retrieved successfully",
+      totalItems,
+      totalPages,
+      currentPage: page || 1,
+      itemsPerPage: limit || totalItems,
+      events: result.rows,
+    });
   } catch (error) {
     console.error(error);
     return res.status(500).json({ status: false, message: error.message });
@@ -431,6 +473,7 @@ exports.getAllByUser = async (req, res) => {
       });
     }
 
+    // Modified query to include suggested items
     const query = `
       SELECT 
         e.*, 
@@ -440,29 +483,29 @@ exports.getAllByUser = async (req, res) => {
           'file_name', u.file_name,
           'file_type', u.file_type,
           'file_url', u.file_url
-        ) AS cover_image_details
+        ) AS cover_image_details,
+        COALESCE(array_agg(json_build_object(
+          'id', si.id,
+          'name', si.name,
+          'created_by', si.created_by,
+          'created_at', si.created_at,
+          'updated_at', si.updated_at
+        )) FILTER (WHERE si.id IS NOT NULL), '{}') AS suggested_items
       FROM events e
       LEFT JOIN question_types qt ON e.category_id = qt.id
       LEFT JOIN uploads u ON e.cover_photo_id = u.id
-      INNER JOIN users usr ON e.user_id = usr.id AND usr.deleted_at IS NULL
+      LEFT JOIN event_suggested_items esi ON e.id = esi.event_id
+      LEFT JOIN suggested_items si ON esi.suggested_item_id = si.id AND (si.created_by = 'admin' OR si.user_id = e.user_id)
       WHERE e.user_id = $1
-      ORDER BY e.id
+      GROUP BY e.id, qt.id, u.id
+      ORDER BY e.id DESC
       LIMIT $2 OFFSET $3;
     `;
 
-    // Adjusted count query to match the user_id filter and check for deleted status
-    const countQuery = `
-      SELECT COUNT(*) 
-      FROM events e
-      INNER JOIN users usr ON e.user_id = usr.id AND usr.deleted_at IS NULL
-      WHERE e.user_id = $1;
-    `;
-
-    // Execute queries
+    // Execute the query
     const result = await pool.query(query, [user_id, limit, offset]);
-    const countResult = await pool.query(countQuery, [user_id]);
 
-    const totalItems = parseInt(countResult.rows[0].count);
+    const totalItems = parseInt(result.rowCount);
     const totalPages = Math.ceil(totalItems / limit);
 
     if (result.rowCount === 0) {
@@ -505,12 +548,22 @@ exports.getAllByCategory = async (req, res) => {
           'file_name', u.file_name,
           'file_type', u.file_type,
           'file_url', u.file_url
-        ) AS cover_image_details
+        ) AS cover_image_details,
+        COALESCE(array_agg(json_build_object(
+          'id', si.id,
+          'name', si.name,
+          'created_by', si.created_by,
+          'created_at', si.created_at,
+          'updated_at', si.updated_at
+        )) FILTER (WHERE si.id IS NOT NULL), '{}') AS suggested_items
       FROM events e
       LEFT JOIN uploads u ON e.cover_photo_id = u.id
       INNER JOIN users usr ON e.user_id = usr.id AND usr.deleted_at IS NULL
+      LEFT JOIN event_suggested_items esi ON e.id = esi.event_id
+      LEFT JOIN suggested_items si ON esi.suggested_item_id = si.id
       WHERE e.category_id = $1
-      ORDER BY e.id
+      GROUP BY e.id, u.id
+      ORDER BY e.id DESC
       LIMIT $2 OFFSET $3;
     `;
 
@@ -733,6 +786,8 @@ exports.filterEvents = async (req, res) => {
       FROM events e
       LEFT JOIN question_types qt ON e.category_id = qt.id
       LEFT JOIN uploads u ON e.cover_photo_id = u.id
+            LEFT JOIN event_suggested_items esi ON e.id = esi.event_id
+      LEFT JOIN suggested_items si ON esi.suggested_item_id = si.id
       INNER JOIN users usr ON e.user_id = usr.id AND usr.deleted_at IS NULL
       WHERE 1 = 1
     `;
@@ -813,7 +868,14 @@ exports.filterEvents = async (req, res) => {
           'file_name', u.file_name,
           'file_type', u.file_type,
           'file_url', u.file_url
-        ) AS cover_image_details 
+        ) AS cover_image_details,
+                COALESCE(array_agg(json_build_object(
+          'id', si.id,
+          'name', si.name,
+          'created_by', si.created_by,
+          'created_at', si.created_at,
+          'updated_at', si.updated_at
+        )) FILTER (WHERE si.id IS NOT NULL), '{}') AS suggested_items
         ${baseQuery} 
         ORDER BY e.id 
         LIMIT $${valueCount++} OFFSET $${valueCount}`;
@@ -943,7 +1005,12 @@ exports.joinEventsWithTypes = async (req, res) => {
       return res.status(404).json({ status: false, message: "User not found" });
     }
     if (userExists.rows[0].deactivate) {
-      return res.status(401).json({ status: false, message: "Your account is deactivated. Access denied" });
+      return res
+        .status(401)
+        .json({
+          status: false,
+          message: "Your account is deactivated. Access denied",
+        });
     }
 
     // Insert into attendee table
@@ -1135,7 +1202,7 @@ ORDER BY es.id DESC
 LIMIT $2 OFFSET $3;
 `;
 
-const countQuery = `
+    const countQuery = `
   SELECT COUNT(*) 
   FROM events_status es
   JOIN events e ON es.event_id = e.id
@@ -1143,8 +1210,6 @@ const countQuery = `
   WHERE es.user_id = $1 
     AND es.status = 'UpComing';
 `;
-
-
 
     // Execute queries
     const result = await pool.query(query, [user_id, limit, offset]);
