@@ -364,6 +364,75 @@ exports.get = async (req, res) => {
     });
   }
 };
+exports.getEvent = async (req, res) => {
+  const { id } = req.params;
+
+  if (!id) {
+    return res.status(400).json({
+      status: false,
+      message: "id and user_id are required.",
+    });
+  }
+
+  try {
+    const userExists = await pool.query(
+      "SELECT id FROM users WHERE id = $1 AND deleted_at IS NULL",
+      [user_id]
+    );
+    if (userExists.rowCount === 0) {
+      return res
+        .status(404)
+        .json({ status: false, message: "User not found or deactivated" });
+    }
+
+    const query = `
+      SELECT 
+        e.*, 
+        qt.text AS category_text, 
+        json_build_object(
+          'id', u.id,
+          'file_name', u.file_name,
+          'file_type', u.file_type,
+          'file_url', u.file_url
+        ) AS cover_image_details,
+        COALESCE(array_agg(json_build_object(
+          'id', si.id,
+          'name', si.name,
+          'created_by', si.created_by,
+          'created_at', si.created_at,
+          'updated_at', si.updated_at
+        )) FILTER (WHERE si.id IS NOT NULL), '{}') AS suggested_items
+      FROM events e
+      LEFT JOIN question_types qt ON e.category_id = qt.id
+      LEFT JOIN uploads u ON e.cover_photo_id = u.id
+      LEFT JOIN event_suggested_items esi ON e.id = esi.event_id
+      LEFT JOIN suggested_items si ON esi.suggested_item_id = si.id
+      WHERE e.id = $1
+      GROUP BY e.id, qt.id, u.id;
+    `;
+
+    const result = await pool.query(query, [id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        status: false,
+        message: "Event not found",
+      });
+    }
+
+    return res.status(200).json({
+      status: true,
+      message: "Event retrieved successfully",
+      result: result.rows[0],
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      status: false,
+      message: "Internal Server Error",
+    });
+  }
+};
 
 exports.getAll = async (req, res) => {
   const page = parseInt(req.query.page);
@@ -1005,12 +1074,10 @@ exports.joinEventsWithTypes = async (req, res) => {
       return res.status(404).json({ status: false, message: "User not found" });
     }
     if (userExists.rows[0].deactivate) {
-      return res
-        .status(401)
-        .json({
-          status: false,
-          message: "Your account is deactivated. Access denied",
-        });
+      return res.status(401).json({
+        status: false,
+        message: "Your account is deactivated. Access denied",
+      });
     }
 
     // Insert into attendee table
@@ -1242,3 +1309,82 @@ LIMIT $2 OFFSET $3;
     });
   }
 };
+
+exports.getAllEventByQuestionTypes = async (req, res) => {
+  try {
+    // Pagination parameters
+    const page = parseInt(req.query.page) || 1;
+    const pageSize = parseInt(req.query.pageSize) || 4;
+    const offset = (page - 1) * pageSize;
+
+    const query = `
+      SELECT
+        json_build_object(
+          'event_cat', json_build_object(
+            'id', qt.id,
+            'text', qt.text,
+            'type', qt.type
+          ),
+          'events', json_agg(
+            json_build_object(
+              'id', e.id,
+              'title', e.title,
+              'category_id', e.category_id,
+              'cover_photo', json_build_object(
+                'id', u.id,
+                'file_name', u.file_name,
+                'file_type', u.file_type,
+                'file_url', u.file_url
+              ),
+              'start_timestamp', e.start_timestamp,
+              'end_timestamp', e.end_timestamp,
+              'event_type', e.event_type,
+              'virtual_link', e.virtual_link,
+              'location', e.location,
+              'event_details', e.event_details,
+              'no_guests', e.no_guests,
+              'privacy', e.privacy,
+              'total_attendee', e.total_attendee,
+              'created_at', e.created_at,
+              'updated_at', e.updated_at
+            )
+          )
+        ) AS result
+      FROM question_types qt
+      LEFT JOIN LATERAL (
+        SELECT e.*
+        FROM events e
+        WHERE e.category_id = qt.id
+        ORDER BY e.created_at DESC
+        LIMIT 5
+      ) e ON true
+      LEFT JOIN uploads u ON e.cover_photo_id = u.id
+      GROUP BY qt.id
+      LIMIT $1 OFFSET $2
+    `;
+
+    const { rows } = await pool.query(query, [pageSize, offset]);
+
+    // Optional: Total count of question types for pagination
+    const countQuery = "SELECT COUNT(*) FROM question_types";
+    const totalResult = await pool.query(countQuery);
+    const totalCount = parseInt(totalResult.rows[0].count);
+
+    res.json({
+      status: true,
+      result: rows.map((row) => row.result),
+      pagination: {
+        page: page,
+        pageSize: pageSize,
+        total: totalCount,
+      },
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      status: false,
+      message: error.message,
+    });
+  }
+};
+
