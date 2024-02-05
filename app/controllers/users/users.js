@@ -132,10 +132,11 @@ exports.create = async (req, res) => {
         );
 
         if (!emailSent.success) {
-          return res.status(500).json({
-            status: false,
-            message: emailSent.message,
-          });
+          console.log("email not sent");
+          // return res.status(500).json({
+          //   status: false,
+          //   message: emailSent.message,
+          // });
         }
         break;
       case "google":
