@@ -5,7 +5,7 @@ const controller = require("../../controllers/events/events");
 // ! increment the count of event in user table
 router.post("/create", controller.create);
 router.post("/joinEventsWithTypes", controller.joinEventsWithTypes);
-router.put("/update", controller.update);
+router.put("/update", controller.update); 
 router.put("/updateJoinEventAttendeeTypeAndStatus", controller.updateJoinEventAttendeeTypeAndStatus);
 router.get("/get/:id/:user_id", controller.get); 
 router.get("/get/:id", controller.getEvent);  
